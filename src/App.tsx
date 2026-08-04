@@ -6,11 +6,14 @@ import { LeadsPage } from "@/features/leads/LeadsPage";
 import { OutreachPage } from "@/features/outreach/OutreachPage";
 import { TasksPage } from "@/features/tasks/TasksPage";
 import { AIModelsPage } from "@/features/ai-models/AIModelsPage";
+import { ConnectorsPage } from "@/features/connectors/ConnectorsPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { getDb } from "@/lib/db/client";
 import { ensureDefaultRouting } from "@/lib/ai/routing";
 import { startJobRunner, stopJobRunner } from "@/lib/jobs/runner";
 import { getSellerProfile, isSellerProfileComplete } from "@/lib/settings/sellerProfile";
+import { initTheme } from "@/lib/settings/theme";
+import { ensureDefaultSearchPresets } from "@/lib/taxonomy";
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -22,7 +25,9 @@ export default function App() {
     (async () => {
       try {
         await getDb();
+        await initTheme();
         await ensureDefaultRouting();
+        await ensureDefaultSearchPresets();
         startJobRunner();
         const profile = await getSellerProfile();
         if (!cancelled) {
@@ -77,6 +82,7 @@ export default function App() {
         <Route path="outreach" element={<OutreachPage />} />
         <Route path="tasks" element={<TasksPage />} />
         <Route path="ai-models" element={<AIModelsPage />} />
+        <Route path="connectors" element={<ConnectorsPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
     </Routes>

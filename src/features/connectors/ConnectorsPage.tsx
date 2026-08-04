@@ -1,0 +1,180 @@
+import { useEffect, useState } from "react";
+import { testSerpApiKey, type KeyTestResult } from "@/lib/ai/testKey";
+import { testBraveKey, testTavilyKey } from "@/lib/connectors/testConnector";
+import { getResendFromAddress, setResendFromAddress } from "@/lib/connectors/email";
+import { CONNECTOR_CATEGORY_LABELS } from "@/lib/connectors/types";
+import { connectorsByCategory } from "@/lib/connectors/registry";
+import { getApiKey, setApiKey } from "@/lib/db/queries";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+const KEYED_CONNECTOR_IDS = ["serp", "tavily", "brave", "resend"];
+
+const TESTERS: Record<string, () => Promise<KeyTestResult>> = {
+  serp: testSerpApiKey,
+  tavily: testTavilyKey,
+  brave: testBraveKey,
+};
+
+export function ConnectorsPage() {
+  const [keys, setKeys] = useState<Record<string, string>>({});
+  const [savedKeys, setSavedKeys] = useState<Record<string, boolean>>({});
+  const [resendFrom, setResendFromState] = useState("");
+  const [saved, setSaved] = useState<string | null>(null);
+  const [testing, setTesting] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, KeyTestResult>>({});
+
+  useEffect(() => {
+    void (async () => {
+      const nextKeys: Record<string, string> = {};
+      const nextSaved: Record<string, boolean> = {};
+      for (const id of KEYED_CONNECTOR_IDS) {
+        const v = await getApiKey(id);
+        if (v) {
+          nextKeys[id] = v;
+          nextSaved[id] = true;
+        }
+      }
+      setKeys(nextKeys);
+      setSavedKeys(nextSaved);
+      setResendFromState(await getResendFromAddress());
+    })();
+  }, []);
+
+  async function saveKey(id: string) {
+    const trimmed = keys[id]?.trim() ?? "";
+    await setApiKey(id, trimmed);
+    setSavedKeys((prev) => ({ ...prev, [id]: Boolean(trimmed) }));
+    setSaved(id);
+    setTimeout(() => setSaved(null), 1500);
+  }
+
+  async function saveResendFrom() {
+    await setResendFromAddress(resendFrom.trim());
+    setSaved("resend-from");
+    setTimeout(() => setSaved(null), 1500);
+  }
+
+  async function test(id: string) {
+    const tester = TESTERS[id];
+    if (!tester) return;
+    setTesting(id);
+    try {
+      const result = await tester();
+      setTestResults((prev) => ({ ...prev, [id]: result }));
+    } finally {
+      setTesting(null);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-6 p-8">
+      <div>
+        <h1 className="font-[var(--font-display)] text-2xl font-semibold tracking-tight">
+          Connectors
+        </h1>
+        <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">
+          AI is the brain — connectors are how work actually gets done. Configure the ones you
+          have keys for; everything else here is on the roadmap.
+        </p>
+      </div>
+
+      {connectorsByCategory()
+        .filter(({ connectors }) => connectors.length > 0)
+        .map(({ category, connectors }) => (
+          <Card key={category}>
+            <CardHeader>
+              <CardTitle className="text-base">{CONNECTOR_CATEGORY_LABELS[category]}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {connectors.map((connector) => {
+                const isImplemented = connector.status === "implemented";
+                const hasKey = savedKeys[connector.id];
+                return (
+                  <div
+                    key={connector.id}
+                    className="space-y-1.5 border-b border-[var(--color-border)] pb-4 last:border-0 last:pb-0"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-sm font-medium">{connector.name}</div>
+                        <div className="text-xs text-[var(--color-muted-foreground)]">
+                          {connector.description}
+                        </div>
+                      </div>
+                      <Badge variant={isImplemented ? (hasKey ? "success" : "warning") : "muted"}>
+                        {isImplemented ? (hasKey ? "Connected" : "Needs key") : "Coming soon"}
+                      </Badge>
+                    </div>
+
+                    {isImplemented && (
+                      <>
+                        <div className="flex gap-2">
+                          <Input
+                            type="password"
+                            autoComplete="off"
+                            placeholder={`Enter ${connector.name} API key`}
+                            value={keys[connector.id] ?? ""}
+                            onChange={(e) =>
+                              setKeys((prev) => ({ ...prev, [connector.id]: e.target.value }))
+                            }
+                          />
+                          <Button variant="secondary" onClick={() => void saveKey(connector.id)}>
+                            {saved === connector.id ? "Saved" : "Save"}
+                          </Button>
+                          {TESTERS[connector.id] && (
+                            <Button
+                              variant="outline"
+                              disabled={!hasKey || testing === connector.id}
+                              onClick={() => void test(connector.id)}
+                            >
+                              {testing === connector.id ? "Testing…" : "Test"}
+                            </Button>
+                          )}
+                        </div>
+
+                        {connector.id === "resend" && (
+                          <>
+                            <div className="flex gap-2 pt-1">
+                              <Input
+                                placeholder='"From" address, e.g. you@yourdomain.com'
+                                value={resendFrom}
+                                onChange={(e) => setResendFromState(e.target.value)}
+                              />
+                              <Button variant="secondary" onClick={() => void saveResendFrom()}>
+                                {saved === "resend-from" ? "Saved" : "Save"}
+                              </Button>
+                            </div>
+                            <p className="text-xs text-[var(--color-muted-foreground)]">
+                              Resend's recommended "sending only" keys can't be validated without
+                              sending a real email, so there's no Test button here — it's checked
+                              on first send.
+                            </p>
+                          </>
+                        )}
+
+                        {testResults[connector.id] && (
+                          <p
+                            className={`text-xs ${
+                              testResults[connector.id]!.ok
+                                ? "text-[var(--color-success)]"
+                                : "text-[var(--color-destructive)]"
+                            }`}
+                          >
+                            {testResults[connector.id]!.ok ? "✓ " : "✗ "}
+                            {testResults[connector.id]!.message}
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        ))}
+    </div>
+  );
+}

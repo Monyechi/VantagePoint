@@ -21,37 +21,46 @@ It does **not** hunt peers or competitors in your niche (e.g. other coaches when
 | Area | Status |
 |------|--------|
 | Desktop app (React + Tauri) | Done |
-| Local SQLite database | Done |
+| Local SQLite database with versioned migrations | Done |
 | Background job queue (while app is open) | Done |
 | Prospect Search → Leads → Outreach → Tasks | Done |
-| Per-task AI model routing + cost estimates | Done |
-| BYOK API keys in Settings | Done |
-| AI providers: DeepSeek, Claude, OpenAI, Gemini, Kimi, Grok | Done |
-| Web search via **SerpAPI** (Google) | Done |
+| Prospect Search as dropdowns (industry/service/buyer/signals/location/budget), not free text | Done |
+| Saved search presets (one starter per industry, plus your own) | Done |
+| Seller Profile (used in every outreach draft and in lead scoring) | Done |
+| Per-task AI model routing + real per-model cost tracking | Done |
+| API keys stored in the OS keychain (not the database) | Done |
+| AI providers: DeepSeek (V4 Flash/Pro), Claude (Opus 5/Sonnet 5/Haiku 4.5), OpenAI, Gemini, Kimi, Grok | Done |
+| Light / Dark / System theme | Done |
+| Web search — **SerpAPI**, **Tavily**, or **Brave Search** (auto-picks whichever is configured) | Done |
 | Manual URL list (analyze without search) | Done |
-| Website fetch + AI analysis + lead scoring | Done (homepage HTML; not full About/Services crawl yet) |
-| Outreach draft / regenerate / approve | Done (mailto or clipboard — not SMTP send) |
+| Website fetch + AI analysis + lead scoring (merged into a single pass) | Done (homepage HTML; not full About/Services crawl yet) |
+| Outreach draft / regenerate / approve | Done |
+| Outreach sending — **Resend** if configured, else mailto/clipboard | Done |
+| Leads CRM — status, notes, delete, draft-from-row, search/filter | Done |
+| Connectors page — live status for every connector on the roadmap | Done |
 | LinkedIn / Facebook / Reddit as search sources | UI only (“coming soon”) |
 | LinkedIn / Facebook message **drafting** | Done (no auto-send / no scraping) |
 
-## Connectors roadmap (not built yet)
+## Connectors
 
-The long-term design is a **connector / tools** layer: AI is the brain; connectors are how work gets done. Most of the list below is **planned**, not shipped.
+The architecture is a **connector / tools** layer: AI is the brain; connectors are how work gets done. Every connector below — implemented or planned — has a live status in the app's **Connectors** page, which is the source of truth; this table is a snapshot.
 
-### Already in MVP
+### Implemented
 
-- **AI** — DeepSeek (default worker) + Claude (default writing) + other LLMs via routing
-- **Search** — SerpAPI
-- **Website analysis** — HTTP fetch + LLM (basic)
-- **Local CRM** — built-in Leads (not HubSpot/Salesforce sync)
-- **Jobs** — lightweight in-app queue (not BullMQ)
+| Category | Connector |
+|----------|-----------|
+| Search | SerpAPI, Tavily, Brave Search |
+| Email | Resend |
+| Website analysis | HTTP fetch + LLM (basic) |
+| Local CRM | Built-in Leads (not HubSpot/Salesforce sync) |
+| Jobs | Lightweight in-app queue (not BullMQ) |
 
-### Not incorporated yet
+### Planned
 
 | Category | Examples from the platform vision |
 |----------|-----------------------------------|
-| Search alternatives | Tavily, Brave Search, Serper |
-| Email sending | Resend, Postmark, SendGrid, Mailgun |
+| Search alternatives | Serper |
+| Email alternatives | Postmark, SendGrid, Mailgun |
 | Calendar | Google Calendar, Outlook |
 | External CRM | HubSpot, Salesforce, Pipedrive, Zoho |
 | Contacts sync | Google / Microsoft Contacts |
@@ -81,12 +90,13 @@ Or double-click **`Start ClientPilot.bat`**.
 
 ### First-time setup in the app
 
-1. **Settings** — add DeepSeek (and Claude for outreach). Add SerpAPI if you want Google search.
-2. **AI Models** — confirm per-task providers (optional).
-3. **Prospect Search** — what you sell, who the buyer is, location, budget → **Find Leads**.
-4. Review **Leads**, draft in **Outreach**, watch progress in **Tasks**.
+1. **Settings** — fill in your Seller Profile, and add DeepSeek (+ Claude for outreach).
+2. **Connectors** — add a search key (SerpAPI, Tavily, or Brave) and, optionally, Resend for sending outreach directly.
+3. **AI Models** — confirm per-task providers (optional).
+4. **Prospect Search** — pick industry, service, buyer type, location, budget → **Find Leads**.
+5. Review **Leads**, draft in **Outreach**, watch progress and cost in **Tasks**.
 
-No SerpAPI? Paste prospect URLs under Extra URLs; analyze + score still run.
+No search connector configured? Paste prospect URLs under Extra URLs; analyze + score still run.
 
 ## Scripts
 
@@ -99,6 +109,7 @@ No SerpAPI? Paste prospect URLs under Extra URLs; analyze + score still run.
 ## Stack (current)
 
 - **Desktop:** React + Vite + TypeScript + Tailwind + Tauri 2
-- **Data:** SQLite (`@tauri-apps/plugin-sql`)
-- **HTTP:** `@tauri-apps/plugin-http` (LLM APIs, SerpAPI, page fetch)
-- **Keys:** Bring your own (stored locally)
+- **Data:** SQLite (`@tauri-apps/plugin-sql`), versioned migrations
+- **HTTP:** `@tauri-apps/plugin-http` (LLM APIs, search/email connectors, page fetch)
+- **Keys:** Bring your own — stored in the OS keychain (Windows Credential Manager / macOS
+  Keychain / Linux Secret Service) via the Rust `keyring` crate, never in the database

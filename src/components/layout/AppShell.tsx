@@ -5,6 +5,7 @@ import {
   MessageSquare,
   ListTodo,
   Bot,
+  Plug,
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -15,6 +16,7 @@ const nav = [
   { to: "/outreach", label: "Outreach", icon: MessageSquare },
   { to: "/tasks", label: "Tasks", icon: ListTodo },
   { to: "/ai-models", label: "AI Models", icon: Bot },
+  { to: "/connectors", label: "Connectors", icon: Plug },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 

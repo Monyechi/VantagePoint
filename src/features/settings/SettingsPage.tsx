@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { PROVIDERS, type ProviderId } from "@/lib/ai/types";
-import { testProviderKey, testSerpApiKey, type KeyTestResult } from "@/lib/ai/testKey";
+import { testProviderKey, type KeyTestResult } from "@/lib/ai/testKey";
 import { getApiKey, listApiKeys, setApiKey } from "@/lib/db/queries";
 import {
   DEFAULT_SELLER_PROFILE,
@@ -11,10 +11,12 @@ import {
   type SellerProfile,
   type SellerTone,
 } from "@/lib/settings/sellerProfile";
+import { getTheme, setTheme, type Theme } from "@/lib/settings/theme";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -24,12 +26,10 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-const EXTRA = [
-  {
-    id: "serp" as const,
-    name: "SerpAPI",
-    hint: "Required for Google prospect search (or paste Extra URLs instead)",
-  },
+const THEME_OPTIONS: { value: Theme; label: string }[] = [
+  { value: "system", label: "Match system" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
 ];
 
 export function SettingsPage() {
@@ -43,11 +43,13 @@ export function SettingsPage() {
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileWasComplete, setProfileWasComplete] = useState(true);
 
+  const [theme, setThemeState] = useState<Theme>("system");
+
   useEffect(() => {
     void (async () => {
       setStatus(await listApiKeys());
       const next: Record<string, string> = {};
-      for (const p of [...PROVIDERS.map((x) => x.id), "serp"]) {
+      for (const p of PROVIDERS.map((x) => x.id)) {
         const v = await getApiKey(p);
         if (v) next[p] = v;
       }
@@ -56,8 +58,15 @@ export function SettingsPage() {
       const loadedProfile = await getSellerProfile();
       setProfile(loadedProfile);
       setProfileWasComplete(isSellerProfileComplete(loadedProfile));
+
+      setThemeState(await getTheme());
     })();
   }, []);
+
+  async function changeTheme(next: Theme) {
+    setThemeState(next);
+    await setTheme(next);
+  }
 
   async function save(provider: string) {
     await setApiKey(provider, keys[provider]?.trim() ?? "");
@@ -69,10 +78,7 @@ export function SettingsPage() {
   async function testKey(provider: string) {
     setTesting(provider);
     try {
-      const result =
-        provider === "serp"
-          ? await testSerpApiKey()
-          : await testProviderKey(provider as ProviderId);
+      const result = await testProviderKey(provider as ProviderId);
       setTestResults((prev) => ({ ...prev, [provider]: result }));
     } finally {
       setTesting(null);
@@ -90,10 +96,10 @@ export function SettingsPage() {
     setTimeout(() => setProfileSaved(false), 1500);
   }
 
-  const rows: { id: string; name: string; hint?: string }[] = [
-    ...PROVIDERS.map((p) => ({ id: p.id, name: p.name })),
-    ...EXTRA,
-  ];
+  const rows: { id: string; name: string; hint?: string }[] = PROVIDERS.map((p) => ({
+    id: p.id,
+    name: p.name,
+  }));
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 p-8">
@@ -105,6 +111,30 @@ export function SettingsPage() {
           Bring your own keys (BYOK). Stored securely in your OS keychain.
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Appearance</CardTitle>
+          <CardDescription>Choose a color theme, or follow your system setting.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="max-w-xs space-y-1.5">
+            <Label>Theme</Label>
+            <Select value={theme} onValueChange={(v) => void changeTheme(v as Theme)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {THEME_OPTIONS.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>
+                    {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
 
       {!profileWasComplete && (
         <Card className="border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5">
@@ -215,9 +245,10 @@ export function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>API keys</CardTitle>
+          <CardTitle>AI provider keys</CardTitle>
           <CardDescription>
-            DeepSeek for volume work, Claude for outreach writing, SerpAPI for Google search
+            DeepSeek for volume work, Claude for outreach writing. Search and email keys
+            (SerpAPI, Tavily, Brave, Resend) live on the Connectors page.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -280,8 +311,8 @@ export function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-[var(--color-muted-foreground)]">
           <p>
-            Without SerpAPI, paste target websites into Prospect Search → Extra URLs to
-            still run analyze + score.
+            No search connector configured? Paste target websites into Prospect Search →
+            Extra URLs to still run analyze + score.
           </p>
           <p>
             Change per-task providers on the AI Models page without touching code.

@@ -1,9 +1,9 @@
 import { fetch } from "@tauri-apps/plugin-http";
 import { completeWithRouting } from "@/lib/ai/complete";
 import { getSellerProfile, sellerProfileBrief } from "@/lib/settings/sellerProfile";
+import { searchWeb } from "@/lib/connectors/search";
 import {
   appendJobEvent,
-  getApiKey,
   getJob,
   updateJob,
   updateProspectSearchStatus,
@@ -200,42 +200,6 @@ Good example: "looking for relationship coach", "need marriage counseling [city]
   return fallbackBuyerQueries(payload);
 }
 
-async function searchSerpApi(
-  query: string,
-  maxResults: number,
-): Promise<{ title: string; link: string; snippet: string }[]> {
-  const key = await getApiKey("serp");
-  if (!key) {
-    throw new Error(
-      "No SerpAPI key. Add it in Settings, or paste website URLs in Extra URLs.",
-    );
-  }
-  const params = new URLSearchParams({
-    engine: "google",
-    q: query,
-    api_key: key,
-    num: String(Math.min(maxResults, 20)),
-  });
-  const res = await fetch(`https://serpapi.com/search.json?${params.toString()}`, {
-    method: "GET",
-  });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`SerpAPI error ${res.status}: ${t.slice(0, 300)}`);
-  }
-  const data = (await res.json()) as {
-    organic_results?: { title?: string; link?: string; snippet?: string }[];
-  };
-  return (data.organic_results ?? [])
-    .filter((r) => r.link)
-    .map((r) => ({
-      title: r.title ?? "",
-      link: r.link!,
-      snippet: r.snippet ?? "",
-    }))
-    .slice(0, maxResults);
-}
-
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_HTML_CHARS = 2_000_000;
 
@@ -353,7 +317,7 @@ export async function runProspectSearchJob(job: JobRow): Promise<void> {
           );
           const resultSets: { title: string; link: string; snippet: string }[][] = [];
           for (const q of queries) {
-            const results = await searchSerpApi(q, perQueryTarget);
+            const results = await searchWeb(q, perQueryTarget);
             await log(`Found ${results.length} results for query`);
             resultSets.push(results);
           }

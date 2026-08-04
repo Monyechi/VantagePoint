@@ -38,23 +38,8 @@ import {
   companySizeLabel,
   findService,
   stateLabel,
+  type PresetConfig,
 } from "@/lib/taxonomy";
-
-interface PresetConfig {
-  industryId: string;
-  serviceId: string;
-  buyerTypeId: string;
-  intentSignalIds: string[];
-  countryId: string;
-  stateId: string;
-  customRegion: string;
-  city: string;
-  budgetBandId: string;
-  companySizeId: string;
-  resultCount: number;
-  extraUrls: string;
-  notes: string;
-}
 
 const DEFAULT_INDUSTRY = INDUSTRIES[0]!;
 const DEFAULT_SERVICE = DEFAULT_INDUSTRY.services[0]!;

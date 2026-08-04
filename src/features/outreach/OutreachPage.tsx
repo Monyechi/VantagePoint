@@ -9,6 +9,7 @@ import {
   type OutreachMessage,
 } from "@/lib/db/queries";
 import { subscribeJobs } from "@/lib/jobs/runner";
+import { isResendConfigured, sendEmailViaResend } from "@/lib/connectors/email";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -96,6 +97,21 @@ export function OutreachPage() {
     if (!selected) return;
     const lead = leads.find((l) => l.id === selected.lead_id);
     if (selected.channel === "email" && lead?.email) {
+      if (await isResendConfigured()) {
+        try {
+          await sendEmailViaResend({
+            to: lead.email,
+            subject: selected.subject || "Hello",
+            text: draftBody,
+          });
+          await updateOutreachStatus(selected.id, "sent", draftBody);
+          setNotice("Sent via Resend.");
+        } catch (err) {
+          setNotice(err instanceof Error ? err.message : String(err));
+        }
+        await refresh();
+        return;
+      }
       const subject = encodeURIComponent(selected.subject || "Hello");
       const body = encodeURIComponent(draftBody);
       window.open(`mailto:${lead.email}?subject=${subject}&body=${body}`);

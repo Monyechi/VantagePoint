@@ -3,6 +3,11 @@
 @theme {
   --font-sans: "Segoe UI", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Segoe UI Semibold", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Dark is the default palette — matches the app's original look and acts as the
+   fallback whenever data-theme hasn't been resolved yet (e.g. before JS runs). */
+:root {
   --color-background: #0f1419;
   --color-foreground: #e8eef4;
   --color-card: #171d25;
@@ -19,6 +24,57 @@
   --color-sidebar: #0c1015;
   --color-success: #3d9a7a;
   --color-warning: #c9a227;
+  --gradient-1: #1a2836;
+  --gradient-2: #13261f;
+  --scrollbar-thumb: #2a3441;
+}
+
+/* Pre-JS fallback for "system" preference on a light OS — avoids a flash of the
+   dark theme before the theme module resolves and stamps data-theme on <html>. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --color-background: #f6f7f9;
+    --color-foreground: #1b2430;
+    --color-card: #ffffff;
+    --color-card-foreground: #1b2430;
+    --color-muted: #eef1f4;
+    --color-muted-foreground: #5b6675;
+    --color-border: #dde2e8;
+    --color-primary: #2f7a5f;
+    --color-primary-foreground: #f4fbf7;
+    --color-accent: #2a5f8f;
+    --color-accent-foreground: #ffffff;
+    --color-destructive: #b3453f;
+    --color-ring: #2f7a5f;
+    --color-sidebar: #eef1f4;
+    --color-success: #2f7a5f;
+    --color-warning: #a1740f;
+    --gradient-1: #e7ecf1;
+    --gradient-2: #e4f0ea;
+    --scrollbar-thumb: #d6dbe1;
+  }
+}
+
+:root[data-theme="light"] {
+  --color-background: #f6f7f9;
+  --color-foreground: #1b2430;
+  --color-card: #ffffff;
+  --color-card-foreground: #1b2430;
+  --color-muted: #eef1f4;
+  --color-muted-foreground: #5b6675;
+  --color-border: #dde2e8;
+  --color-primary: #2f7a5f;
+  --color-primary-foreground: #f4fbf7;
+  --color-accent: #2a5f8f;
+  --color-accent-foreground: #ffffff;
+  --color-destructive: #b3453f;
+  --color-ring: #2f7a5f;
+  --color-sidebar: #eef1f4;
+  --color-success: #2f7a5f;
+  --color-warning: #a1740f;
+  --gradient-1: #e7ecf1;
+  --gradient-2: #e4f0ea;
+  --scrollbar-thumb: #d6dbe1;
 }
 
 * {
@@ -34,11 +90,12 @@ body,
 body {
   margin: 0;
   font-family: var(--font-sans);
-  background: radial-gradient(1200px 600px at 10% -10%, #1a2836 0%, transparent 55%),
-    radial-gradient(900px 500px at 100% 0%, #13261f 0%, transparent 50%),
+  background: radial-gradient(1200px 600px at 10% -10%, var(--gradient-1) 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, var(--gradient-2) 0%, transparent 50%),
     var(--color-background);
   color: var(--color-foreground);
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 ::-webkit-scrollbar {
@@ -46,6 +103,6 @@ body {
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2a3441;
+  background: var(--scrollbar-thumb);
   border-radius: 4px;
 }

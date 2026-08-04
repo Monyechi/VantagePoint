@@ -71,8 +71,8 @@ export const PROVIDERS: ProviderDefinition[] = [
     apiStyle: "openai",
     implemented: true,
     models: [
-      { id: "deepseek-chat", label: "DeepSeek Chat (V4)", inputPerM: 0.14, outputPerM: 0.28 },
-      { id: "deepseek-reasoner", label: "DeepSeek Reasoner", inputPerM: 0.55, outputPerM: 2.19 },
+      { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash", inputPerM: 0.14, outputPerM: 0.28 },
+      { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", inputPerM: 0.435, outputPerM: 0.87 },
     ],
   },
   {
@@ -134,8 +134,8 @@ export const PROVIDERS: ProviderDefinition[] = [
 ];
 
 export const DEFAULT_ROUTING: ModelRouting[] = [
-  { taskKind: "website_analysis", providerId: "deepseek", modelId: "deepseek-chat" },
-  { taskKind: "lead_research", providerId: "deepseek", modelId: "deepseek-chat" },
+  { taskKind: "website_analysis", providerId: "deepseek", modelId: "deepseek-v4-flash" },
+  { taskKind: "lead_research", providerId: "deepseek", modelId: "deepseek-v4-flash" },
   { taskKind: "email_writing", providerId: "claude", modelId: "claude-sonnet-5" },
   { taskKind: "linkedin_writing", providerId: "claude", modelId: "claude-sonnet-5" },
   { taskKind: "facebook_writing", providerId: "claude", modelId: "claude-sonnet-5" },
