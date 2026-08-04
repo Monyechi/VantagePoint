@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { testSerpApiKey, type KeyTestResult } from "@/lib/ai/testKey";
-import { testBraveKey, testTavilyKey } from "@/lib/connectors/testConnector";
+import {
+  testBraveKey,
+  testGooglePlacesKey,
+  testPageSpeedKey,
+  testTavilyKey,
+} from "@/lib/connectors/testConnector";
 import { getResendFromAddress, setResendFromAddress } from "@/lib/connectors/email";
 import { CONNECTOR_CATEGORY_LABELS } from "@/lib/connectors/types";
 import { connectorsByCategory } from "@/lib/connectors/registry";
@@ -10,12 +15,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-const KEYED_CONNECTOR_IDS = ["serp", "tavily", "brave", "resend"];
+const KEYED_CONNECTOR_IDS = [
+  "serp",
+  "tavily",
+  "brave",
+  "resend",
+  "google_places",
+  "google_pagespeed",
+];
 
 const TESTERS: Record<string, () => Promise<KeyTestResult>> = {
   serp: testSerpApiKey,
   tavily: testTavilyKey,
   brave: testBraveKey,
+  google_places: testGooglePlacesKey,
+  google_pagespeed: testPageSpeedKey,
 };
 
 export function ConnectorsPage() {

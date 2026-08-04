@@ -14,7 +14,7 @@ export type JobState =
   | "failed"
   | "cancelled";
 
-export type JobType = "prospect_search" | "draft_outreach";
+export type JobType = "prospect_search" | "draft_outreach" | "local_business_search";
 
 export interface JobRow {
   id: string;
@@ -54,6 +54,12 @@ export interface Lead {
   last_contact: string | null;
   campaign: string | null;
   notes: string | null;
+  phone: string | null;
+  rating: number | null;
+  review_count: number | null;
+  place_id: string | null;
+  place_synced_at: string | null;
+  opportunity_flags: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -295,41 +301,73 @@ export async function upsertLead(input: {
   name?: string;
   business?: string;
   email?: string;
-  website: string;
+  website?: string;
   score: number;
   summary?: string;
   painPoints?: string;
   scoreReasons?: string;
   campaign?: string;
+  placeId?: string;
+  phone?: string;
+  rating?: number;
+  reviewCount?: number;
+  opportunityFlags?: string[];
 }): Promise<Lead> {
   const db = await getDb();
-  const existing = input.searchId
-    ? await db.select<Lead[]>(
-        "SELECT * FROM leads WHERE website = $1 AND search_id = $2 LIMIT 1",
-        [input.website, input.searchId],
-      )
-    : await db.select<Lead[]>(
-        "SELECT * FROM leads WHERE website = $1 AND search_id IS NULL LIMIT 1",
-        [input.website],
-      );
+
+  // Dedup by Place ID when present (Local Business Hunter leads may have no
+  // website at all), otherwise fall back to the (website, search_id) pair.
+  let existing: Lead[] = [];
+  if (input.placeId) {
+    existing = await db.select<Lead[]>("SELECT * FROM leads WHERE place_id = $1 LIMIT 1", [
+      input.placeId,
+    ]);
+  } else if (input.website) {
+    existing = input.searchId
+      ? await db.select<Lead[]>(
+          "SELECT * FROM leads WHERE website = $1 AND search_id = $2 LIMIT 1",
+          [input.website, input.searchId],
+        )
+      : await db.select<Lead[]>(
+          "SELECT * FROM leads WHERE website = $1 AND search_id IS NULL LIMIT 1",
+          [input.website],
+        );
+  }
+
   const ts = nowIso();
+  const opportunityFlagsJson = input.opportunityFlags
+    ? JSON.stringify(input.opportunityFlags)
+    : null;
+
   if (existing[0]) {
     await db.execute(
       `UPDATE leads SET name = COALESCE($1, name), business = COALESCE($2, business),
-       email = COALESCE($3, email), score = $4, summary = COALESCE($5, summary),
-       pain_points = COALESCE($6, pain_points), score_reasons = COALESCE($7, score_reasons),
-       search_id = COALESCE($8, search_id), campaign = COALESCE($9, campaign), updated_at = $10
-       WHERE id = $11`,
+       email = COALESCE($3, email), website = COALESCE($4, website), score = $5,
+       summary = COALESCE($6, summary), pain_points = COALESCE($7, pain_points),
+       score_reasons = COALESCE($8, score_reasons), search_id = COALESCE($9, search_id),
+       campaign = COALESCE($10, campaign), phone = COALESCE($11, phone),
+       rating = COALESCE($12, rating), review_count = COALESCE($13, review_count),
+       place_id = COALESCE($14, place_id),
+       place_synced_at = COALESCE($15, place_synced_at),
+       opportunity_flags = COALESCE($16, opportunity_flags), updated_at = $17
+       WHERE id = $18`,
       [
         input.name ?? null,
         input.business ?? null,
         input.email ?? null,
+        input.website ?? null,
         input.score,
         input.summary ?? null,
         input.painPoints ?? null,
         input.scoreReasons ?? null,
         input.searchId ?? null,
         input.campaign ?? null,
+        input.phone ?? null,
+        input.rating ?? null,
+        input.reviewCount ?? null,
+        input.placeId ?? null,
+        input.placeId ? ts : null,
+        opportunityFlagsJson,
         ts,
         existing[0].id,
       ],
@@ -340,24 +378,59 @@ export async function upsertLead(input: {
   const id = uuid();
   await db.execute(
     `INSERT INTO leads
-     (id, search_id, name, business, email, website, score, status, summary, pain_points, score_reasons, campaign, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'new', $8, $9, $10, $11, $12, $12)`,
+     (id, search_id, name, business, email, website, score, status, summary, pain_points,
+      score_reasons, campaign, phone, rating, review_count, place_id, place_synced_at,
+      opportunity_flags, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'new', $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $18)`,
     [
       id,
       input.searchId ?? null,
       input.name ?? null,
       input.business ?? null,
       input.email ?? null,
-      input.website,
+      input.website ?? null,
       input.score,
       input.summary ?? null,
       input.painPoints ?? null,
       input.scoreReasons ?? null,
       input.campaign ?? null,
+      input.phone ?? null,
+      input.rating ?? null,
+      input.reviewCount ?? null,
+      input.placeId ?? null,
+      input.placeId ? ts : null,
+      opportunityFlagsJson,
       ts,
     ],
   );
   return (await getLead(id))!;
+}
+
+export async function updateLeadPlaceFields(
+  id: string,
+  fields: {
+    business?: string;
+    website?: string | null;
+    phone?: string | null;
+    rating?: number | null;
+    reviewCount?: number | null;
+  },
+): Promise<void> {
+  const db = await getDb();
+  const ts = nowIso();
+  await db.execute(
+    `UPDATE leads SET business = COALESCE($1, business), website = $2, phone = $3,
+     rating = $4, review_count = $5, place_synced_at = $6, updated_at = $6 WHERE id = $7`,
+    [
+      fields.business ?? null,
+      fields.website ?? null,
+      fields.phone ?? null,
+      fields.rating ?? null,
+      fields.reviewCount ?? null,
+      ts,
+      id,
+    ],
+  );
 }
 
 export async function getLead(id: string): Promise<Lead | null> {
@@ -369,6 +442,14 @@ export async function getLead(id: string): Promise<Lead | null> {
 export async function listLeads(): Promise<Lead[]> {
   const db = await getDb();
   return db.select<Lead[]>("SELECT * FROM leads ORDER BY score DESC, updated_at DESC");
+}
+
+export async function listLeadsBySearchId(searchId: string): Promise<Lead[]> {
+  const db = await getDb();
+  return db.select<Lead[]>(
+    "SELECT * FROM leads WHERE search_id = $1 ORDER BY score DESC, updated_at DESC",
+    [searchId],
+  );
 }
 
 export async function updateLeadStatus(id: string, status: string): Promise<void> {

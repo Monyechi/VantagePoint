@@ -38,8 +38,20 @@ It does **not** hunt peers or competitors in your niche (e.g. other coaches when
 | Outreach sending — **Resend** if configured, else mailto/clipboard | Done |
 | Leads CRM — status, notes, delete, draft-from-row, search/filter | Done |
 | Connectors page — live status for every connector on the roadmap | Done |
+| **Local Business Hunter** — Google Places by city/type/radius, missing-website detection, PageSpeed + AI opportunity scoring | Done |
 | LinkedIn / Facebook / Reddit as search sources | UI only (“coming soon”) |
 | LinkedIn / Facebook message **drafting** | Done (no auto-send / no scraping) |
+
+## Local Business Hunter
+
+A second lead-sourcing mode alongside Prospect Search, built around Google Maps Platform. Enter a city, a business type, and a radius; for each business found:
+
+- **No website?** It's flagged as a high-priority lead immediately — demand exists (reviews, rating) with nowhere online to send it.
+- **Has a website?** ClientPilot fetches the homepage plus best-effort About/Contact pages, runs Google PageSpeed (performance/accessibility/SEO), detects common DIY site builders (WordPress, Wix, Squarespace, Shopify, Weebly, Webflow, GoDaddy Website Builder) with a free built-in signature detector, and has the AI combine all of it into one opportunity score with concrete reasons and a best-effort decision-maker name/email.
+
+Results land in the same Leads/Outreach/Tasks pipeline as Prospect Search, with a results dashboard (counts by opportunity flag, an optional estimated-revenue figure from your own average project value).
+
+**Google Maps Platform data handling:** Google's terms restrict how Places data can be stored/cached long-term. ClientPilot only persists the Place ID plus its own analysis (score, notes, outreach) — not the full Places payload (no coordinates, opening hours, or place-type taxonomy). The business-card fields it does keep (name, phone, website, rating, review count) refresh on demand via a **Refresh from Google** button on the lead, rather than being treated as a permanent copy.
 
 ## Connectors
 
@@ -51,6 +63,8 @@ The architecture is a **connector / tools** layer: AI is the brain; connectors a
 |----------|-----------|
 | Search | SerpAPI, Tavily, Brave Search |
 | Email | Resend |
+| Maps / Places | Google Places + Geocoding (Local Business Hunter) |
+| Website tech / SEO | Google PageSpeed; built-in free tech-signature detector (WordPress/Wix/Squarespace/Shopify/Weebly/Webflow/GoDaddy) |
 | Website analysis | HTTP fetch + LLM (basic) |
 | Local CRM | Built-in Leads (not HubSpot/Salesforce sync) |
 | Jobs | Lightweight in-app queue (not BullMQ) |
@@ -64,9 +78,9 @@ The architecture is a **connector / tools** layer: AI is the brain; connectors a
 | Calendar | Google Calendar, Outlook |
 | External CRM | HubSpot, Salesforce, Pipedrive, Zoho |
 | Contacts sync | Google / Microsoft Contacts |
-| Maps / Places | Google Places, Mapbox, geocoding |
+| Maps / Places alternatives | Mapbox, OpenStreetMap |
 | Company intelligence | Apollo, Clearbit, People Data Labs, Hunter, Snov |
-| Website tech / SEO | Wappalyzer, BuiltWith, PageSpeed |
+| Website tech / SEO alternatives | Wappalyzer (paid — built-in detector above covers common cases free), BuiltWith |
 | Domain | WHOIS / DNS |
 | Social (live) | Reddit, YouTube, X, etc. as real sources |
 | LinkedIn | Import/enrichment only (avoid scraping as core) |
@@ -91,9 +105,11 @@ Or double-click **`Start ClientPilot.bat`**.
 ### First-time setup in the app
 
 1. **Settings** — fill in your Seller Profile, and add DeepSeek (+ Claude for outreach).
-2. **Connectors** — add a search key (SerpAPI, Tavily, or Brave) and, optionally, Resend for sending outreach directly.
+2. **Connectors** — add a search key (SerpAPI, Tavily, or Brave); optionally Resend for sending
+   outreach directly, and a Google Maps Platform key for the Local Business Hunter.
 3. **AI Models** — confirm per-task providers (optional).
 4. **Prospect Search** — pick industry, service, buyer type, location, budget → **Find Leads**.
+   Or **Local Business Hunter** — city, business type, radius → **Find Businesses**.
 5. Review **Leads**, draft in **Outreach**, watch progress and cost in **Tasks**.
 
 No search connector configured? Paste prospect URLs under Extra URLs; analyze + score still run.

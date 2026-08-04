@@ -4,10 +4,12 @@ import {
   deleteLead,
   listLeads,
   updateLeadNotes,
+  updateLeadPlaceFields,
   updateLeadStatus,
   type Lead,
 } from "@/lib/db/queries";
 import { subscribeJobs } from "@/lib/jobs/runner";
+import { getPlaceDetails } from "@/lib/connectors/places";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +35,7 @@ export function LeadsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [notesDraft, setNotesDraft] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [refreshingPlace, setRefreshingPlace] = useState(false);
 
   const selectedRef = useRef<Lead | null>(null);
   useEffect(() => {
@@ -97,6 +100,27 @@ export function LeadsPage() {
     if (!selected) return;
     await createJob({ type: "draft_outreach", payload: { leadId: selected.id, channel } });
     setNotice(`Draft ${channel} queued — check Tasks, then Outreach to approve.`);
+  }
+
+  async function refreshFromGoogle() {
+    if (!selected?.place_id) return;
+    setRefreshingPlace(true);
+    try {
+      const details = await getPlaceDetails(selected.place_id);
+      await updateLeadPlaceFields(selected.id, {
+        business: details.name,
+        website: details.website,
+        phone: details.phone,
+        rating: details.rating,
+        reviewCount: details.reviewCount,
+      });
+      setNotice("Refreshed from Google.");
+      await refresh();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRefreshingPlace(false);
+    }
   }
 
   return (
@@ -235,7 +259,35 @@ export function LeadsPage() {
               <div className="text-[var(--color-muted-foreground)]">
                 {selected.email || "No email found"}
               </div>
+              {selected.phone && (
+                <div className="text-[var(--color-muted-foreground)]">{selected.phone}</div>
+              )}
             </div>
+            {selected.rating != null && (
+              <div>
+                <div className="text-xs text-[var(--color-muted-foreground)]">Google rating</div>
+                <div>
+                  {selected.rating}★ ({selected.review_count ?? 0} reviews)
+                </div>
+              </div>
+            )}
+            {selected.place_id && (
+              <div className="space-y-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={refreshingPlace}
+                  onClick={() => void refreshFromGoogle()}
+                >
+                  {refreshingPlace ? "Refreshing…" : "Refresh from Google"}
+                </Button>
+                {selected.place_synced_at && (
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    Last synced {formatRelativeTime(selected.place_synced_at)}
+                  </p>
+                )}
+              </div>
+            )}
             <div>
               <div className="text-xs text-[var(--color-muted-foreground)]">Score</div>
               <div className="font-semibold">{selected.score}/100</div>

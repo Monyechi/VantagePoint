@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 import {
   Search,
+  MapPin,
   Users,
   MessageSquare,
   ListTodo,
@@ -12,6 +13,7 @@ import { cn } from "@/lib/utils";
 
 const nav = [
   { to: "/prospect", label: "Prospect Search", icon: Search },
+  { to: "/local-hunter", label: "Local Business Hunter", icon: MapPin },
   { to: "/leads", label: "Leads", icon: Users },
   { to: "/outreach", label: "Outreach", icon: MessageSquare },
   { to: "/tasks", label: "Tasks", icon: ListTodo },

@@ -6,6 +6,7 @@ import {
 } from "@/lib/db/queries";
 import { nowIso } from "@/lib/db/client";
 import { runProspectSearchJob } from "./pipeline";
+import { runLocalBusinessSearchJob } from "./localBusinessPipeline";
 import { completeWithRouting } from "@/lib/ai/complete";
 import {
   createOutreachMessage,
@@ -133,6 +134,8 @@ async function executeJob(job: JobRow): Promise<void> {
       await runProspectSearchJob(job);
     } else if (job.type === "draft_outreach") {
       await runDraftOutreach(job);
+    } else if (job.type === "local_business_search") {
+      await runLocalBusinessSearchJob(job);
     } else {
       await updateJob(job.id, {
         state: "failed",

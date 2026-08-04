@@ -62,7 +62,14 @@ export const CONNECTORS: Connector[] = [
   { id: "microsoft_contacts", name: "Microsoft Contacts", category: "contacts", description: "Sync contacts.", status: "planned" },
 
   // Maps
-  { id: "google_places", name: "Google Places", category: "maps", description: "\"Find dentists within 10 miles\" style local search.", status: "planned" },
+  {
+    id: "google_places",
+    name: "Google Places",
+    category: "maps",
+    description: "Local Business Hunter — find businesses by city + type + radius, flag the ones with no website.",
+    status: "implemented",
+    keyHint: 'Enter a Google Maps Platform key in Connectors (needs "Places API (New)" and "Geocoding API" enabled).',
+  },
   { id: "mapbox", name: "Mapbox", category: "maps", description: "Geocoding and maps.", status: "planned" },
   { id: "openstreetmap", name: "OpenStreetMap", category: "maps", description: "Free geocoding.", status: "planned" },
 
@@ -74,9 +81,22 @@ export const CONNECTORS: Connector[] = [
   { id: "snov", name: "Snov.io", category: "company_intel", description: "Email finder and outreach.", status: "planned" },
 
   // Website tech / SEO
-  { id: "pagespeed", name: "Google PageSpeed", category: "website_analysis", description: "Analyze speed, mobile-friendliness, accessibility — a great selling point in outreach.", status: "planned" },
+  {
+    id: "google_pagespeed",
+    name: "Google PageSpeed",
+    category: "website_analysis",
+    description: "Speed, accessibility, and SEO scores — feeds the Local Business Hunter's opportunity score.",
+    status: "implemented",
+    keyHint: 'Enter a Google Cloud API key with "PageSpeed Insights API" enabled in Connectors — can be the same key as Google Places.',
+  },
   { id: "builtwith", name: "BuiltWith", category: "website_analysis", description: "Detect a site's tech stack.", status: "planned" },
-  { id: "wappalyzer", name: "Wappalyzer", category: "website_analysis", description: "Detect WordPress, Shopify, Wix, Squarespace, etc.", status: "planned" },
+  {
+    id: "wappalyzer",
+    name: "Wappalyzer",
+    category: "website_analysis",
+    description: "Paid tech-stack detection API. ClientPilot ships a free built-in signature detector (WordPress/Wix/Squarespace/Shopify/Weebly/Webflow/GoDaddy) that covers the common cases without a subscription.",
+    status: "planned",
+  },
 
   // Domain
   { id: "whois", name: "WHOIS / DNS", category: "domain", description: "Domain age, registrar, expiration.", status: "planned" },

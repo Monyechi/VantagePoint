@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
 import { ProspectPage } from "@/features/prospect/ProspectPage";
+import { LocalBusinessHunterPage } from "@/features/local-hunter/LocalBusinessHunterPage";
 import { LeadsPage } from "@/features/leads/LeadsPage";
 import { OutreachPage } from "@/features/outreach/OutreachPage";
 import { TasksPage } from "@/features/tasks/TasksPage";
@@ -78,6 +79,7 @@ export default function App() {
           element={<Navigate to={needsOnboarding ? "/settings" : "/prospect"} replace />}
         />
         <Route path="prospect" element={<ProspectPage />} />
+        <Route path="local-hunter" element={<LocalBusinessHunterPage />} />
         <Route path="leads" element={<LeadsPage />} />
         <Route path="outreach" element={<OutreachPage />} />
         <Route path="tasks" element={<TasksPage />} />

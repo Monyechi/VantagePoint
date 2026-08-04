@@ -135,4 +135,19 @@ export const MIGRATIONS: Migration[] = [
       )`,
     ],
   },
+  {
+    version: 3,
+    statements: [
+      // Local Business Hunter fields. Deliberately minimal: only what's needed for
+      // outreach/CRM plus the Place ID for refreshing later — not a cache of the full
+      // Places payload (no lat/lng, opening hours, or place "types" persisted), per
+      // Google Maps Platform's terms on storing/caching Places data.
+      `ALTER TABLE leads ADD COLUMN phone TEXT`,
+      `ALTER TABLE leads ADD COLUMN rating REAL`,
+      `ALTER TABLE leads ADD COLUMN review_count INTEGER`,
+      `ALTER TABLE leads ADD COLUMN place_id TEXT`,
+      `ALTER TABLE leads ADD COLUMN place_synced_at TEXT`,
+      `ALTER TABLE leads ADD COLUMN opportunity_flags TEXT`,
+    ],
+  },
 ];
