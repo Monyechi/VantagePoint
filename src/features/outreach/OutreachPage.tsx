@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createJob,
   listAllOutreach,
@@ -33,15 +33,21 @@ export function OutreachPage() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  async function refresh() {
+  const selectedRef = useRef<OutreachMessage | null>(null);
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
+
+  const refresh = useCallback(async () => {
     const l = await listLeads();
     setLeads(l);
     if (!leadId && l[0]) setLeadId(l[0].id);
     if (leadId) {
       const msgs = await listOutreachForLead(leadId);
       setMessages(msgs);
-      if (selected) {
-        const updated = msgs.find((m) => m.id === selected.id);
+      const current = selectedRef.current;
+      if (current) {
+        const updated = msgs.find((m) => m.id === current.id);
         if (updated) {
           setSelected(updated);
           setDraftBody(updated.body);
@@ -51,24 +57,25 @@ export function OutreachPage() {
       const all = await listAllOutreach();
       setMessages(all);
     }
-  }
+  }, [leadId]);
 
   useEffect(() => {
     void refresh();
     return subscribeJobs(() => {
       void refresh();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leadId]);
+  }, [refresh]);
 
-  async function generate() {
-    if (!leadId) return;
+  async function generate(overrideLeadId?: string, overrideChannel?: Channel) {
+    const targetLeadId = overrideLeadId ?? leadId;
+    const targetChannel = overrideChannel ?? channel;
+    if (!targetLeadId) return;
     setBusy(true);
     setNotice(null);
     try {
       await createJob({
         type: "draft_outreach",
-        payload: { leadId, channel },
+        payload: { leadId: targetLeadId, channel: targetChannel },
       });
       setNotice("Draft job queued — check Tasks, then return here to approve.");
     } catch (err) {
@@ -224,7 +231,9 @@ export function OutreachPage() {
               <Button
                 variant="secondary"
                 disabled={!selected}
-                onClick={() => void generate()}
+                onClick={() =>
+                  void generate(selected?.lead_id, selected?.channel as Channel | undefined)
+                }
               >
                 Regenerate
               </Button>

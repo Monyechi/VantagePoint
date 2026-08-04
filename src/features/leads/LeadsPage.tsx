@@ -1,30 +1,103 @@
-import { useEffect, useState } from "react";
-import { listLeads, type Lead } from "@/lib/db/queries";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createJob,
+  deleteLead,
+  listLeads,
+  updateLeadNotes,
+  updateLeadStatus,
+  type Lead,
+} from "@/lib/db/queries";
 import { subscribeJobs } from "@/lib/jobs/runner";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatRelativeTime } from "@/lib/utils";
+
+const LEAD_STATUSES = [
+  { id: "new", label: "New" },
+  { id: "contacted", label: "Contacted" },
+  { id: "qualified", label: "Qualified" },
+  { id: "unqualified", label: "Unqualified" },
+  { id: "won", label: "Won" },
+  { id: "lost", label: "Lost" },
+];
 
 export function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selected, setSelected] = useState<Lead | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [notesDraft, setNotesDraft] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
 
-  async function refresh() {
+  const selectedRef = useRef<Lead | null>(null);
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
+
+  const refresh = useCallback(async () => {
     const rows = await listLeads();
     setLeads(rows);
-    if (selected) {
-      const updated = rows.find((l) => l.id === selected.id) ?? null;
+    const current = selectedRef.current;
+    if (current) {
+      const updated = rows.find((l) => l.id === current.id) ?? null;
       setSelected(updated);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void refresh();
     return subscribeJobs(() => {
       void refresh();
     });
+  }, [refresh]);
+
+  useEffect(() => {
+    // Reset the draft only when switching leads, not on every background refresh —
+    // otherwise an in-progress edit gets clobbered by the next poll.
+    setNotesDraft(selected?.notes ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [selected?.id]);
+
+  const filteredLeads = leads.filter((lead) => {
+    if (statusFilter !== "all" && lead.status !== statusFilter) return false;
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      (lead.business ?? "").toLowerCase().includes(q) ||
+      (lead.website ?? "").toLowerCase().includes(q) ||
+      (lead.email ?? "").toLowerCase().includes(q)
+    );
+  });
+
+  async function changeStatus(id: string, status: string) {
+    await updateLeadStatus(id, status);
+    await refresh();
+  }
+
+  async function saveNotes() {
+    if (!selected) return;
+    await updateLeadNotes(selected.id, notesDraft);
+    setNotice("Notes saved.");
+    await refresh();
+  }
+
+  async function removeLead() {
+    if (!selected) return;
+    await deleteLead(selected.id);
+    setSelected(null);
+    await refresh();
+  }
+
+  async function draftOutreach(channel: "email" | "linkedin" | "facebook") {
+    if (!selected) return;
+    await createJob({ type: "draft_outreach", payload: { leadId: selected.id, channel } });
+    setNotice(`Draft ${channel} queued — check Tasks, then Outreach to approve.`);
+  }
 
   return (
     <div className="flex h-full min-h-0">
@@ -38,10 +111,38 @@ export function LeadsPage() {
           </p>
         </div>
 
+        <div className="flex flex-wrap gap-2">
+          <Input
+            placeholder="Search business, website, or email"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="max-w-xs"
+          />
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              {LEAD_STATUSES.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         {leads.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-sm text-[var(--color-muted-foreground)]">
               No leads yet. Run a Prospect Search to populate this list.
+            </CardContent>
+          </Card>
+        ) : filteredLeads.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-sm text-[var(--color-muted-foreground)]">
+              No leads match your filters.
             </CardContent>
           </Card>
         ) : (
@@ -57,7 +158,7 @@ export function LeadsPage() {
                 </tr>
               </thead>
               <tbody>
-                {leads.map((lead) => (
+                {filteredLeads.map((lead) => (
                   <tr
                     key={lead.id}
                     onClick={() => setSelected(lead)}
@@ -113,6 +214,21 @@ export function LeadsPage() {
             </a>
           </CardHeader>
           <div className="space-y-4 text-sm">
+            <div className="space-y-1.5">
+              <Label>Status</Label>
+              <Select value={selected.status} onValueChange={(v) => void changeStatus(selected.id, v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LEAD_STATUSES.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div>
               <div className="text-xs text-[var(--color-muted-foreground)]">Contact</div>
               <div>{selected.name || "—"}</div>
@@ -142,6 +258,42 @@ export function LeadsPage() {
             <div>
               <div className="text-xs text-[var(--color-muted-foreground)]">Campaign</div>
               <div>{selected.campaign || "—"}</div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Textarea
+                rows={3}
+                value={notesDraft}
+                onChange={(e) => setNotesDraft(e.target.value)}
+                placeholder="Private notes about this lead"
+              />
+              <Button size="sm" variant="secondary" onClick={() => void saveNotes()}>
+                Save notes
+              </Button>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Draft outreach</Label>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => void draftOutreach("email")}>
+                  Email
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => void draftOutreach("linkedin")}>
+                  LinkedIn
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => void draftOutreach("facebook")}>
+                  Facebook
+                </Button>
+              </div>
+            </div>
+
+            {notice && <p className="text-xs text-[var(--color-primary)]">{notice}</p>}
+
+            <div className="border-t border-[var(--color-border)] pt-4">
+              <Button size="sm" variant="destructive" onClick={() => void removeLead()}>
+                Delete lead
+              </Button>
             </div>
           </div>
         </aside>

@@ -42,7 +42,3 @@ export async function setRouting(routing: ModelRouting): Promise<void> {
   cache = null;
   await listRouting();
 }
-
-export function invalidateRoutingCache() {
-  cache = null;
-}

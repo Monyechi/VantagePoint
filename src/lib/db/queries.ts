@@ -1,6 +1,10 @@
 import { v4 as uuid } from "uuid";
+import { invoke } from "@tauri-apps/api/core";
 import type { ModelRouting, ProviderId, TaskKind } from "@/lib/ai/types";
+import { notifyJobs } from "@/lib/jobs/events";
 import { getDb, nowIso } from "./client";
+
+const KEY_PROVIDERS = ["deepseek", "claude", "openai", "gemini", "kimi", "grok", "serp"];
 
 export type JobState =
   | "queued"
@@ -49,6 +53,7 @@ export interface Lead {
   score_reasons: string | null;
   last_contact: string | null;
   campaign: string | null;
+  notes: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -78,34 +83,24 @@ export interface ProspectSearch {
   completed_at: string | null;
 }
 
-// ——— API keys & settings ———
+// ——— API keys (OS keychain) & settings ———
 
 export async function getApiKey(provider: string): Promise<string | null> {
-  const db = await getDb();
-  const rows = await db.select<{ secret: string }[]>(
-    "SELECT secret FROM api_keys WHERE provider = $1",
-    [provider],
-  );
-  return rows[0]?.secret ?? null;
+  return invoke<string | null>("get_api_key", { provider });
 }
 
 export async function setApiKey(provider: string, secret: string): Promise<void> {
-  const db = await getDb();
-  await db.execute(
-    `INSERT INTO api_keys (provider, secret, updated_at) VALUES ($1, $2, $3)
-     ON CONFLICT(provider) DO UPDATE SET secret = excluded.secret, updated_at = excluded.updated_at`,
-    [provider, secret, nowIso()],
-  );
+  await invoke("set_api_key", { provider, secret });
 }
 
 export async function listApiKeys(): Promise<{ provider: string; hasKey: boolean }[]> {
-  const db = await getDb();
-  const rows = await db.select<{ provider: string }[]>(
-    "SELECT provider FROM api_keys WHERE secret != ''",
+  const results = await Promise.all(
+    KEY_PROVIDERS.map(async (provider) => ({
+      provider,
+      hasKey: (await getApiKey(provider)) !== null,
+    })),
   );
-  const set = new Set(rows.map((r) => r.provider));
-  const providers = ["deepseek", "claude", "openai", "gemini", "kimi", "grok", "serp"];
-  return providers.map((p) => ({ provider: p, hasKey: set.has(p) }));
+  return results;
 }
 
 export async function getSetting(key: string): Promise<string | null> {
@@ -194,10 +189,12 @@ export async function claimNextJob(): Promise<JobRow | null> {
   const job = rows[0];
   if (!job) return null;
   const ts = nowIso();
-  await db.execute(
+  const result = await db.execute(
     `UPDATE jobs SET state = 'running', started_at = $1, updated_at = $1 WHERE id = $2 AND state = 'queued'`,
     [ts, job.id],
   );
+  // Another window may have claimed this job between the SELECT and the UPDATE.
+  if (result.rowsAffected === 0) return null;
   return (await getJob(job.id))!;
 }
 
@@ -206,19 +203,20 @@ export async function updateJob(
   patch: Partial<Pick<JobRow, "state" | "progress" | "error" | "completed_at">>,
 ): Promise<void> {
   const db = await getDb();
-  const current = await getJob(id);
-  if (!current) return;
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  for (const [key, value] of Object.entries(patch)) {
+    params.push(value);
+    sets.push(`${key} = $${params.length}`);
+  }
+  params.push(nowIso());
+  sets.push(`updated_at = $${params.length}`);
+  params.push(id);
   await db.execute(
-    `UPDATE jobs SET state = $1, progress = $2, error = $3, completed_at = $4, updated_at = $5 WHERE id = $6`,
-    [
-      patch.state ?? current.state,
-      patch.progress ?? current.progress,
-      patch.error !== undefined ? patch.error : current.error,
-      patch.completed_at !== undefined ? patch.completed_at : current.completed_at,
-      nowIso(),
-      id,
-    ],
+    `UPDATE jobs SET ${sets.join(", ")} WHERE id = $${params.length}`,
+    params,
   );
+  notifyJobs();
 }
 
 export async function appendJobEvent(
@@ -231,6 +229,7 @@ export async function appendJobEvent(
     `INSERT INTO job_events (id, job_id, message, level, created_at) VALUES ($1, $2, $3, $4, $5)`,
     [uuid(), jobId, message, level, nowIso()],
   );
+  notifyJobs();
 }
 
 export async function listJobEvents(jobId: string): Promise<JobEvent[]> {
@@ -238,14 +237,6 @@ export async function listJobEvents(jobId: string): Promise<JobEvent[]> {
   return db.select<JobEvent[]>(
     "SELECT * FROM job_events WHERE job_id = $1 ORDER BY created_at ASC",
     [jobId],
-  );
-}
-
-export async function listRecentJobEvents(limit = 50): Promise<JobEvent[]> {
-  const db = await getDb();
-  return db.select<JobEvent[]>(
-    "SELECT * FROM job_events ORDER BY created_at DESC LIMIT $1",
-    [limit],
   );
 }
 
@@ -312,10 +303,15 @@ export async function upsertLead(input: {
   campaign?: string;
 }): Promise<Lead> {
   const db = await getDb();
-  const existing = await db.select<Lead[]>(
-    "SELECT * FROM leads WHERE website = $1 LIMIT 1",
-    [input.website],
-  );
+  const existing = input.searchId
+    ? await db.select<Lead[]>(
+        "SELECT * FROM leads WHERE website = $1 AND search_id = $2 LIMIT 1",
+        [input.website, input.searchId],
+      )
+    : await db.select<Lead[]>(
+        "SELECT * FROM leads WHERE website = $1 AND search_id IS NULL LIMIT 1",
+        [input.website],
+      );
   const ts = nowIso();
   if (existing[0]) {
     await db.execute(
@@ -384,6 +380,21 @@ export async function updateLeadStatus(id: string, status: string): Promise<void
   ]);
 }
 
+export async function updateLeadNotes(id: string, notes: string): Promise<void> {
+  const db = await getDb();
+  await db.execute(`UPDATE leads SET notes = $1, updated_at = $2 WHERE id = $3`, [
+    notes,
+    nowIso(),
+    id,
+  ]);
+}
+
+export async function deleteLead(id: string): Promise<void> {
+  const db = await getDb();
+  await db.execute(`DELETE FROM outreach_messages WHERE lead_id = $1`, [id]);
+  await db.execute(`DELETE FROM leads WHERE id = $1`, [id]);
+}
+
 // ——— Outreach ———
 
 export async function createOutreachMessage(input: {
@@ -439,4 +450,100 @@ export async function updateOutreachStatus(
       [status, nowIso(), id],
     );
   }
+}
+
+// ——— Usage / cost tracking ———
+
+export interface UsageSummary {
+  totalCostUsd: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+}
+
+export async function insertUsage(input: {
+  jobId?: string;
+  taskKind: string;
+  providerId: string;
+  modelId: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    `INSERT INTO usage
+     (id, job_id, task_kind, provider_id, model_id, input_tokens, output_tokens, cost_usd, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [
+      uuid(),
+      input.jobId ?? null,
+      input.taskKind,
+      input.providerId,
+      input.modelId,
+      input.inputTokens,
+      input.outputTokens,
+      input.costUsd,
+      nowIso(),
+    ],
+  );
+}
+
+// ——— Search presets ———
+
+export interface SearchPreset {
+  id: string;
+  name: string;
+  config_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listSearchPresets(): Promise<SearchPreset[]> {
+  const db = await getDb();
+  return db.select<SearchPreset[]>(
+    "SELECT * FROM search_presets ORDER BY name ASC",
+  );
+}
+
+export async function saveSearchPreset(input: {
+  id?: string;
+  name: string;
+  config: unknown;
+}): Promise<SearchPreset> {
+  const db = await getDb();
+  const ts = nowIso();
+  const id = input.id ?? uuid();
+  await db.execute(
+    `INSERT INTO search_presets (id, name, config_json, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $4)
+     ON CONFLICT(id) DO UPDATE SET name = excluded.name, config_json = excluded.config_json, updated_at = excluded.updated_at`,
+    [id, input.name, JSON.stringify(input.config), ts],
+  );
+  const rows = await db.select<SearchPreset[]>(
+    "SELECT * FROM search_presets WHERE id = $1",
+    [id],
+  );
+  return rows[0]!;
+}
+
+export async function deleteSearchPreset(id: string): Promise<void> {
+  const db = await getDb();
+  await db.execute(`DELETE FROM search_presets WHERE id = $1`, [id]);
+}
+
+export async function sumUsageForJob(jobId: string): Promise<UsageSummary> {
+  const db = await getDb();
+  const rows = await db.select<
+    { total_cost: number | null; total_in: number | null; total_out: number | null }[]
+  >(
+    `SELECT SUM(cost_usd) as total_cost, SUM(input_tokens) as total_in, SUM(output_tokens) as total_out
+     FROM usage WHERE job_id = $1`,
+    [jobId],
+  );
+  const row = rows[0];
+  return {
+    totalCostUsd: row?.total_cost ?? 0,
+    totalInputTokens: row?.total_in ?? 0,
+    totalOutputTokens: row?.total_out ?? 0,
+  };
 }

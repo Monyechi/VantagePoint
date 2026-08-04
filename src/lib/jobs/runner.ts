@@ -11,6 +11,10 @@ import {
   createOutreachMessage,
   getLead,
 } from "@/lib/db/queries";
+import { getSellerProfile, sellerProfileBrief } from "@/lib/settings/sellerProfile";
+import { notifyJobs, subscribeJobs } from "./events";
+
+export { subscribeJobs };
 
 export interface DraftOutreachPayload {
   leadId: string;
@@ -19,21 +23,12 @@ export interface DraftOutreachPayload {
 
 let running = false;
 let timer: ReturnType<typeof setInterval> | null = null;
-const listeners = new Set<() => void>();
-
-export function subscribeJobs(cb: () => void): () => void {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
-}
-
-function notify() {
-  for (const cb of listeners) cb();
-}
 
 async function runDraftOutreach(job: JobRow): Promise<void> {
   const payload = JSON.parse(job.payload_json) as DraftOutreachPayload;
   const lead = await getLead(payload.leadId);
   if (!lead) throw new Error("Lead not found");
+  const profile = await getSellerProfile();
 
   const taskKind =
     payload.channel === "email"
@@ -52,12 +47,35 @@ async function runDraftOutreach(job: JobRow): Promise<void> {
         ? "LinkedIn connection/message"
         : "Facebook outreach message";
 
-  const result = await completeWithRouting(taskKind, {
-    system: `You write concise, personalized ${channelLabel} copy to sell the user's offer to a potential CLIENT.
-You are helping the user win business — not networking with peers. Be warm, specific, and non-spammy. Avoid hype.`,
-    prompt: `Write a ${channelLabel} from the seller to this lead.
+  const schema =
+    payload.channel === "email"
+      ? {
+          type: "object",
+          properties: {
+            subject: { type: "string" },
+            body: { type: "string" },
+          },
+          required: ["subject", "body"],
+          additionalProperties: false,
+        }
+      : {
+          type: "object",
+          properties: {
+            body: { type: "string" },
+          },
+          required: ["body"],
+          additionalProperties: false,
+        };
 
-Seller's offer / campaign: ${lead.campaign || "their services"}
+  const result = await completeWithRouting(taskKind, {
+    system: `You write concise, personalized ${channelLabel} copy to sell the seller's offer to a potential CLIENT.
+You are writing AS ${profile.name || "the seller"}${profile.company ? ` from ${profile.company}` : ""}, in a ${profile.tone} tone.
+You are helping the seller win business — not networking with peers. Be specific and non-spammy. Avoid hype.`,
+    prompt: `${sellerProfileBrief(profile)}
+
+Write a ${channelLabel} from the seller to this lead.
+
+Seller's offer / campaign: ${lead.campaign || profile.offer || "their services"}
 
 Lead:
 Business: ${lead.business}
@@ -69,6 +87,10 @@ Pain points / needs: ${lead.pain_points || ""}
 Why they scored as a lead: ${lead.score_reasons || ""}
 
 Pitch how the seller's offer can help THIS lead. Do not write as if contacting a competitor.
+${profile.proofPoints ? `Weave in relevant proof points/credentials where natural: ${profile.proofPoints}` : ""}
+${profile.cta ? `End with this call to action: ${profile.cta}` : ""}
+${profile.bookingLink ? `If it fits, mention this booking link: ${profile.bookingLink}` : ""}
+${profile.signature ? `Sign off with:\n${profile.signature}` : ""}
 
 ${
   payload.channel === "email"
@@ -76,8 +98,9 @@ ${
     : "Return JSON: { body: string }"
 }`,
     json: true,
+    schema,
     temperature: 0.7,
-  });
+  }, job.id);
 
   let parsed: { subject?: string; body: string };
   try {
@@ -126,7 +149,7 @@ async function executeJob(job: JobRow): Promise<void> {
       completed_at: nowIso(),
     });
   } finally {
-    notify();
+    notifyJobs();
   }
 }
 
@@ -136,7 +159,7 @@ async function tick(): Promise<void> {
   try {
     const job = await claimNextJob();
     if (job) {
-      notify();
+      notifyJobs();
       await executeJob(job);
     }
   } finally {

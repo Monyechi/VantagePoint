@@ -1,5 +1,5 @@
 import { fetch } from "@tauri-apps/plugin-http";
-import { getApiKey } from "@/lib/db/queries";
+import { getApiKey, insertUsage } from "@/lib/db/queries";
 import {
   PROVIDERS,
   type CompletionRequest,
@@ -73,13 +73,19 @@ async function completeAnthropic(
   req: CompletionRequest,
 ): Promise<CompletionResult> {
   const apiKey = await getKey("claude");
+  // Current Claude models (Opus 5, Sonnet 5, Haiku 4.5) reject non-default temperature/top_p/top_k —
+  // don't forward sampling params to this API.
   const body: Record<string, unknown> = {
     model: modelId,
     max_tokens: req.maxTokens ?? 2048,
-    temperature: req.temperature ?? 0.4,
     messages: [{ role: "user", content: req.prompt }],
   };
   if (req.system) body.system = req.system;
+  if (req.schema) {
+    body.output_config = {
+      format: { type: "json_schema", schema: req.schema },
+    };
+  }
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -98,8 +104,13 @@ async function completeAnthropic(
 
   const data = (await res.json()) as {
     content: { type: string; text?: string }[];
+    stop_reason?: string;
     usage?: { input_tokens?: number; output_tokens?: number };
   };
+
+  if (data.stop_reason === "refusal") {
+    throw new Error("Claude declined this request (safety refusal).");
+  }
 
   const text = data.content
     .filter((c) => c.type === "text")
@@ -126,10 +137,10 @@ async function completeGemini(
     : req.prompt;
   contents.push({ role: "user", parts: [{ text: prompt }] });
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`;
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
     body: JSON.stringify({
       contents,
       generationConfig: {
@@ -163,12 +174,37 @@ async function completeGemini(
   };
 }
 
+async function recordUsage(
+  taskKind: TaskKind,
+  providerId: ProviderId,
+  modelId: string,
+  result: CompletionResult,
+  jobId?: string,
+): Promise<void> {
+  const inputTokens = result.inputTokens ?? 0;
+  const outputTokens = result.outputTokens ?? 0;
+  const model = PROVIDERS.find((p) => p.id === providerId)?.models.find(
+    (m) => m.id === modelId,
+  );
+  const costUsd =
+    (inputTokens / 1_000_000) * (model?.inputPerM ?? 0) +
+    (outputTokens / 1_000_000) * (model?.outputPerM ?? 0);
+  try {
+    await insertUsage({ jobId, taskKind, providerId, modelId, inputTokens, outputTokens, costUsd });
+  } catch {
+    // Usage tracking is best-effort; never fail the actual completion because of it.
+  }
+}
+
 export async function completeWithRouting(
   taskKind: TaskKind,
   req: CompletionRequest,
+  jobId?: string,
 ): Promise<CompletionResult> {
   const routing = await getRoutingForTask(taskKind);
-  return complete(routing.providerId, routing.modelId, req);
+  const result = await complete(routing.providerId, routing.modelId, req);
+  await recordUsage(taskKind, routing.providerId, routing.modelId, result, jobId);
+  return result;
 }
 
 export async function complete(

@@ -1,5 +1,6 @@
 import { fetch } from "@tauri-apps/plugin-http";
 import { completeWithRouting } from "@/lib/ai/complete";
+import { getSellerProfile, sellerProfileBrief } from "@/lib/settings/sellerProfile";
 import {
   appendJobEvent,
   getApiKey,
@@ -28,6 +29,11 @@ export interface ProspectSearchPayload {
   sources: string[];
   extraUrls?: string;
   maxResults?: number;
+  /** Deterministic queries computed client-side from taxonomy selections. When present,
+   * these are used directly and the LLM query planner is skipped entirely. */
+  queries?: string[];
+  /** Free-text supplement to the structured taxonomy fields, folded into the AI context. */
+  notes?: string;
 }
 
 function stripHtml(html: string): string {
@@ -44,9 +50,27 @@ function stripHtml(html: string): string {
     .slice(0, 12000);
 }
 
+const EMAIL_ASSET_EXTENSIONS = /\.(png|jpe?g|gif|svg|webp|ico|bmp|css|js)$/i;
+const EMAIL_NOISE_DOMAINS = new Set([
+  "sentry.io",
+  "sentry.wixpress.com",
+  "wixpress.com",
+  "example.com",
+  "godaddy.com",
+  "wordpress.com",
+  "wp.com",
+  "schema.org",
+  "w3.org",
+]);
+
 function extractEmails(text: string): string[] {
-  const matches = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g);
-  return [...new Set(matches ?? [])].slice(0, 5);
+  const matches = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) ?? [];
+  const filtered = matches.filter((email) => {
+    if (EMAIL_ASSET_EXTENSIONS.test(email)) return false;
+    const domain = email.split("@")[1]?.toLowerCase() ?? "";
+    return !EMAIL_NOISE_DOMAINS.has(domain);
+  });
+  return [...new Set(filtered)].slice(0, 5);
 }
 
 function normalizeUrl(url: string): string {
@@ -58,12 +82,80 @@ function normalizeUrl(url: string): string {
   }
 }
 
+/** Domains that are directories, aggregators, or social platforms — never real leads. */
+const BLOCKED_DOMAINS = new Set([
+  "yelp.com",
+  "wikipedia.org",
+  "en.wikipedia.org",
+  "indeed.com",
+  "reddit.com",
+  "facebook.com",
+  "linkedin.com",
+  "glassdoor.com",
+  "angi.com",
+  "bbb.org",
+  "manta.com",
+  "yellowpages.com",
+  "superpages.com",
+  "mapquest.com",
+  "tripadvisor.com",
+  "foursquare.com",
+  "thumbtack.com",
+  "houzz.com",
+  "homeadvisor.com",
+  "craigslist.org",
+  "ziprecruiter.com",
+  "monster.com",
+  "careerbuilder.com",
+  "simplyhired.com",
+  "google.com",
+  "bing.com",
+  "yahoo.com",
+  "amazon.com",
+  "ebay.com",
+  "etsy.com",
+  "pinterest.com",
+  "instagram.com",
+  "twitter.com",
+  "x.com",
+  "youtube.com",
+  "tiktok.com",
+  "medium.com",
+  "quora.com",
+  "stackoverflow.com",
+  "crunchbase.com",
+  "builtwith.com",
+  "similarweb.com",
+  "apps.apple.com",
+  "play.google.com",
+  "nextdoor.com",
+  "alignable.com",
+]);
+
+function getRegistrableDomain(url: string): string {
+  try {
+    const host = new URL(url.startsWith("http") ? url : `https://${url}`).hostname.toLowerCase();
+    return host.startsWith("www.") ? host.slice(4) : host;
+  } catch {
+    return url.toLowerCase();
+  }
+}
+
+function isBlockedDomain(domain: string): boolean {
+  if (BLOCKED_DOMAINS.has(domain)) return true;
+  for (const blocked of BLOCKED_DOMAINS) {
+    if (domain.endsWith(`.${blocked}`)) return true;
+  }
+  return false;
+}
+
 function offerBrief(payload: ProspectSearchPayload): string {
   return [
     `What the user SELLS (their offer): ${payload.niche || "their service"}`,
     payload.audience && `Ideal BUYER: ${payload.audience}`,
     payload.location && `Location focus: ${payload.location}`,
     payload.ticketSize && `Buyer budget / ticket: ${payload.ticketSize}`,
+    payload.notes && `Additional context: ${payload.notes}`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -83,6 +175,7 @@ function fallbackBuyerQueries(payload: ProspectSearchPayload): string[] {
 
 async function buildBuyerSearchQueries(
   payload: ProspectSearchPayload,
+  jobId: string,
 ): Promise<string[]> {
   try {
     const result = await completeWithRouting("lead_research", {
@@ -97,7 +190,7 @@ Bad example for a relationship coach: "relationship coaches United States" (that
 Good example: "looking for relationship coach", "need marriage counseling [city]", dating/communication help forums.`,
       json: true,
       temperature: 0.4,
-    });
+    }, jobId);
     const parsed = parseJsonLoose<{ queries?: string[] }>(result.text);
     const queries = (parsed.queries ?? []).map((q) => q.trim()).filter(Boolean);
     if (queries.length > 0) return queries.slice(0, 5);
@@ -143,7 +236,12 @@ async function searchSerpApi(
     .slice(0, maxResults);
 }
 
+const FETCH_TIMEOUT_MS = 10_000;
+const MAX_HTML_CHARS = 2_000_000;
+
 async function fetchPage(url: string): Promise<string> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
       method: "GET",
@@ -152,12 +250,17 @@ async function fetchPage(url: string): Promise<string> {
           "Mozilla/5.0 (compatible; ClientPilot/0.1; +https://clientpilot.local)",
         Accept: "text/html,application/xhtml+xml",
       },
+      signal: controller.signal,
     });
     if (!res.ok) return "";
+    const contentType = res.headers.get("content-type") ?? "";
+    if (contentType && !/text\/html|application\/xhtml/i.test(contentType)) return "";
     const html = await res.text();
-    return stripHtml(html);
+    return stripHtml(html.slice(0, MAX_HTML_CHARS));
   } catch {
     return "";
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -172,6 +275,28 @@ function parseJsonLoose<T>(text: string): T {
   }
 }
 
+const FETCH_CONCURRENCY = 5;
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= items.length) return;
+      results[index] = await fn(items[index]!);
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
 export async function runProspectSearchJob(job: JobRow): Promise<void> {
   const payload = JSON.parse(job.payload_json) as ProspectSearchPayload;
   const maxResults = payload.maxResults ?? 10;
@@ -183,35 +308,72 @@ export async function runProspectSearchJob(job: JobRow): Promise<void> {
     await updateJob(job.id, { progress: 5 });
 
     const urls: { title: string; link: string; snippet: string }[] = [];
+    const seenDomains = new Set<string>();
 
-    // Extra URLs always included
+    function addUrl(item: { title: string; link: string; snippet: string }): boolean {
+      const domain = getRegistrableDomain(item.link);
+      if (isBlockedDomain(domain) || seenDomains.has(domain)) return false;
+      seenDomains.add(domain);
+      urls.push(item);
+      return true;
+    }
+
+    // Extra URLs are explicit user picks — always included, uncapped by maxResults.
     if (payload.extraUrls?.trim()) {
+      let added = 0;
       for (const line of payload.extraUrls.split(/[\n,]+/)) {
         const u = line.trim();
         if (!u) continue;
-        urls.push({ title: u, link: normalizeUrl(u), snippet: "" });
+        if (addUrl({ title: u, link: normalizeUrl(u), snippet: "" })) added += 1;
       }
-      await log(`Added ${urls.length} URL(s) from Extra URLs`);
+      await log(`Added ${added} URL(s) from Extra URLs`);
     }
 
     if (payload.sources.includes("google")) {
-      await log("Planning buyer-intent Google queries (not competitor search)...");
-      const queries = await buildBuyerSearchQueries(payload);
-      for (const q of queries) {
-        await log(`Search: ${q}`);
-      }
-      try {
-        for (const q of queries) {
-          const results = await searchSerpApi(q, maxResults);
-          await log(`Found ${results.length} results for query`);
-          for (const r of results) {
-            if (!urls.some((u) => u.link === r.link)) urls.push(r);
-          }
+      const remainingSlots = maxResults - urls.length;
+      if (remainingSlots <= 0) {
+        await log("Extra URLs already cover the requested result count; skipping Google search.");
+      } else {
+        const deterministicQueries = (payload.queries ?? []).filter(Boolean);
+        let queries: string[];
+        if (deterministicQueries.length > 0) {
+          await log("Using deterministic buyer-intent queries from your selections...");
+          queries = deterministicQueries;
+        } else {
+          await log("Planning buyer-intent Google queries (not competitor search)...");
+          queries = await buildBuyerSearchQueries(payload, job.id);
         }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (urls.length === 0) throw err;
-        await log(`Google search skipped: ${msg}`, "warn");
+        for (const q of queries) {
+          await log(`Search: ${q}`);
+        }
+        try {
+          const perQueryTarget = Math.min(
+            20,
+            Math.max(5, Math.ceil((remainingSlots * 1.5) / Math.max(queries.length, 1))),
+          );
+          const resultSets: { title: string; link: string; snippet: string }[][] = [];
+          for (const q of queries) {
+            const results = await searchSerpApi(q, perQueryTarget);
+            await log(`Found ${results.length} results for query`);
+            resultSets.push(results);
+          }
+          // Round-robin across queries so no single query crowds out the rest.
+          let addedFromSearch = 0;
+          const maxRounds = Math.max(0, ...resultSets.map((r) => r.length));
+          for (let round = 0; round < maxRounds && urls.length < maxResults; round++) {
+            for (const set of resultSets) {
+              if (urls.length >= maxResults) break;
+              const item = set[round];
+              if (!item) continue;
+              if (addUrl(item)) addedFromSearch += 1;
+            }
+          }
+          await log(`Added ${addedFromSearch} unique result(s) from Google search`);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (urls.length === 0) throw err;
+          await log(`Google search skipped: ${msg}`, "warn");
+        }
       }
     }
 
@@ -231,18 +393,28 @@ export async function runProspectSearchJob(job: JobRow): Promise<void> {
       );
     }
 
-    const target = urls.slice(0, maxResults);
+    const target = urls;
     await log(`Processing ${target.length} potential client leads...`);
     await updateJob(job.id, { progress: 15 });
 
-    const icp = offerBrief(payload);
-
-    let processed = 0;
-    for (const item of target) {
+    await log(`Fetching ${target.length} website(s)...`);
+    const pages = await mapWithConcurrency(target, FETCH_CONCURRENCY, async (item) => {
       await assertNotCancelled(job.id);
       const website = normalizeUrl(item.link);
       await log(`Reading ${website}...`);
       const pageText = await fetchPage(website);
+      return { website, pageText };
+    });
+    await updateJob(job.id, { progress: 30 });
+
+    const sellerProfile = await getSellerProfile();
+    const icp = `${sellerProfileBrief(sellerProfile)}\n${offerBrief(payload)}`;
+
+    let processed = 0;
+    for (let i = 0; i < target.length; i++) {
+      const item = target[i]!;
+      const { website, pageText } = pages[i]!;
+      await assertNotCancelled(job.id);
       const emailsFromPage = extractEmails(pageText);
 
       let analysis: {
@@ -254,13 +426,16 @@ export async function runProspectSearchJob(job: JobRow): Promise<void> {
         fit_notes?: string;
         likely_buyer?: boolean;
       } = {};
+      let scored: { score: number; reasons: string[] } = { score: 0, reasons: [] };
 
       if (pageText.length > 100) {
-        await log(`Analyzing as potential client for your offer...`);
+        await log(`Analyzing and scoring as a potential client for your offer...`);
         const result = await completeWithRouting("website_analysis", {
           system: `You research sales LEADS for a seller. The prospect should be someone who might BUY the seller's offer — not a competitor who sells the same thing.
-Return strict JSON: business_name, contact_name, email, summary, pain_points (string[]), fit_notes, likely_buyer (boolean).
-Mark likely_buyer false if this looks like a peer/competitor (e.g. another coach when the seller IS a coach).`,
+Analyze the page AND score the lead in a single pass.
+Return strict JSON: { business_name, contact_name, email, summary, pain_points: string[], fit_notes, likely_buyer: boolean, score: number (0-100), reasons: string[] }.
+Mark likely_buyer false if this looks like a peer/competitor (e.g. another coach when the seller IS a coach), and penalize score heavily in that case.
+Score 0-100 on fit as a CLIENT for the seller's offer — reward clear need, budget fit, location fit, and outreachability.`,
           prompt: `${icp}
 
 Candidate page: ${website}
@@ -269,13 +444,25 @@ Search snippet: ${item.snippet}
 Page content:
 ${pageText.slice(0, 9000)}
 
-Extract who they are and whether they might need the seller's offer.`,
+Extract who they are, whether they might need the seller's offer, and score them as a sales lead.`,
           json: true,
           temperature: 0.2,
-        });
-        analysis = parseJsonLoose(result.text);
+        }, job.id);
+        const parsed = parseJsonLoose<{
+          business_name?: string;
+          contact_name?: string;
+          email?: string;
+          summary?: string;
+          pain_points?: string[];
+          fit_notes?: string;
+          likely_buyer?: boolean;
+          score?: number;
+          reasons?: string[];
+        }>(result.text);
+        analysis = parsed;
+        scored = { score: parsed.score ?? 0, reasons: parsed.reasons ?? [] };
       } else {
-        await log(`Thin or blocked content for ${website}; scoring from snippet`, "warn");
+        await log(`Thin or blocked content for ${website}; scoring conservatively from snippet`, "warn");
         analysis = {
           business_name: item.title,
           summary: item.snippet || "Could not fetch page content.",
@@ -283,30 +470,11 @@ Extract who they are and whether they might need the seller's offer.`,
           fit_notes: "Limited data",
           likely_buyer: true,
         };
+        scored = {
+          score: 25,
+          reasons: ["Website content could not be fetched; scored conservatively."],
+        };
       }
-
-      await log(`Scoring lead fit (buyer for your offer)...`);
-      const scoreResult = await completeWithRouting("lead_scoring", {
-        system: `Score 0-100 how good this lead is as a CLIENT for the seller's offer.
-Penalize heavily if they appear to be a competitor/peer selling the same service.
-Reward clear need, budget fit, location fit, and outreachability.
-Return JSON: { score: number, reasons: string[] }`,
-        prompt: `${icp}
-
-Prospect:
-${JSON.stringify({
-  website,
-  ...analysis,
-  snippet: item.snippet,
-})}
-
-Score as a sales lead for the seller (someone to sell TO).`,
-        json: true,
-        temperature: 0.1,
-      });
-      const scored = parseJsonLoose<{ score: number; reasons: string[] }>(
-        scoreResult.text,
-      );
 
       let score = Math.max(0, Math.min(100, Math.round(scored.score ?? 0)));
       if (analysis.likely_buyer === false) {
@@ -329,7 +497,7 @@ Score as a sales lead for the seller (someone to sell TO).`,
       });
 
       processed += 1;
-      const progress = 15 + Math.round((processed / target.length) * 80);
+      const progress = 30 + Math.round((processed / target.length) * 65);
       await updateJob(job.id, { progress });
       await log(
         `Saved lead ${analysis.business_name || website} (score ${score})`,

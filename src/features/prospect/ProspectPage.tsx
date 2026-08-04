@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -14,37 +15,90 @@ import { Badge } from "@/components/ui/badge";
 import {
   createJob,
   createProspectSearch,
+  deleteSearchPreset,
   listJobEvents,
+  listSearchPresets,
+  saveSearchPreset,
   type JobEvent,
+  type SearchPreset,
 } from "@/lib/db/queries";
 import { subscribeJobs } from "@/lib/jobs/runner";
+import {
+  BUDGET_BANDS,
+  BUYER_TYPES,
+  COMPANY_SIZES,
+  COUNTRIES,
+  INDUSTRIES,
+  INTENT_SIGNALS,
+  MAJOR_US_CITIES,
+  US_STATES,
+  budgetBandLabel,
+  buyerTypeLabel,
+  buildDeterministicQueries,
+  companySizeLabel,
+  findService,
+  stateLabel,
+} from "@/lib/taxonomy";
 
-const SOURCE_OPTIONS = [
-  { id: "google", label: "Google", ready: true },
-  { id: "linkedin", label: "LinkedIn", ready: false },
-  { id: "facebook", label: "Facebook", ready: false },
-  { id: "reddit", label: "Reddit", ready: false },
-  { id: "podcasts", label: "Podcasts", ready: false },
-  { id: "blogs", label: "Blogs", ready: false },
-];
+interface PresetConfig {
+  industryId: string;
+  serviceId: string;
+  buyerTypeId: string;
+  intentSignalIds: string[];
+  countryId: string;
+  stateId: string;
+  customRegion: string;
+  city: string;
+  budgetBandId: string;
+  companySizeId: string;
+  resultCount: number;
+  extraUrls: string;
+  notes: string;
+}
+
+const DEFAULT_INDUSTRY = INDUSTRIES[0]!;
+const DEFAULT_SERVICE = DEFAULT_INDUSTRY.services[0]!;
+const RESULT_COUNT_OPTIONS = [10, 25, 50];
+
+function serviceDefaults(industryId: string, serviceId: string) {
+  const found = findService(industryId, serviceId);
+  return {
+    buyerTypeId: found?.service.defaultBuyers[0] ?? "individual",
+    intentSignalIds: found?.service.intentSignals ?? [],
+  };
+}
 
 export function ProspectPage() {
-  // "niche" in the DB = what YOU sell / offer (not who your peers are)
-  const [offer, setOffer] = useState(
-    "Website, mobile app, and desktop app development",
+  const [industryId, setIndustryId] = useState(DEFAULT_INDUSTRY.id);
+  const [serviceId, setServiceId] = useState(DEFAULT_SERVICE.id);
+  const [buyerTypeId, setBuyerTypeId] = useState(
+    serviceDefaults(DEFAULT_INDUSTRY.id, DEFAULT_SERVICE.id).buyerTypeId,
   );
-  const [location, setLocation] = useState("United States");
-  const [audience, setAudience] = useState(
-    "Small businesses and startups that need software built",
+  const [intentSignalIds, setIntentSignalIds] = useState<string[]>(
+    serviceDefaults(DEFAULT_INDUSTRY.id, DEFAULT_SERVICE.id).intentSignalIds,
   );
-  const [ticketSize, setTicketSize] = useState("Mid to high ticket projects");
-  const [sources, setSources] = useState<string[]>(["google"]);
+  const [countryId, setCountryId] = useState("US");
+  const [stateId, setStateId] = useState("");
+  const [customRegion, setCustomRegion] = useState("");
+  const [city, setCity] = useState("");
+  const [budgetBandId, setBudgetBandId] = useState(BUDGET_BANDS[0]!.id);
+  const [companySizeId, setCompanySizeId] = useState("any");
+  const [resultCount, setResultCount] = useState(10);
   const [extraUrls, setExtraUrls] = useState("");
-  const [maxResults, setMaxResults] = useState(8);
+  const [notes, setNotes] = useState("");
+
+  const [presets, setPresets] = useState<SearchPreset[]>([]);
+  const [selectedPresetId, setSelectedPresetId] = useState("");
+  const [presetName, setPresetName] = useState("");
+
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void listSearchPresets().then(setPresets);
+  }, []);
 
   useEffect(() => {
     if (!activeJobId) return;
@@ -58,27 +112,130 @@ export function ProspectPage() {
     });
   }, [activeJobId]);
 
-  function toggleSource(id: string, ready: boolean) {
-    if (!ready) return;
-    setSources((prev) =>
+  const industry = INDUSTRIES.find((i) => i.id === industryId) ?? DEFAULT_INDUSTRY;
+  const service = industry.services.find((s) => s.id === serviceId) ?? industry.services[0]!;
+  const country = COUNTRIES.find((c) => c.id === countryId) ?? COUNTRIES[0]!;
+
+  function applyServiceDefaults(newIndustryId: string, newServiceId: string) {
+    const defaults = serviceDefaults(newIndustryId, newServiceId);
+    setServiceId(newServiceId);
+    setBuyerTypeId(defaults.buyerTypeId);
+    setIntentSignalIds(defaults.intentSignalIds);
+  }
+
+  function onIndustryChange(newIndustryId: string) {
+    setIndustryId(newIndustryId);
+    const firstService = INDUSTRIES.find((i) => i.id === newIndustryId)?.services[0]?.id;
+    if (firstService) applyServiceDefaults(newIndustryId, firstService);
+  }
+
+  function toggleIntentSignal(id: string) {
+    setIntentSignalIds((prev) =>
       prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id],
     );
   }
 
+  function currentConfig(): PresetConfig {
+    return {
+      industryId,
+      serviceId,
+      buyerTypeId,
+      intentSignalIds,
+      countryId,
+      stateId,
+      customRegion,
+      city,
+      budgetBandId,
+      companySizeId,
+      resultCount,
+      extraUrls,
+      notes,
+    };
+  }
+
+  function applyConfig(config: Partial<PresetConfig>) {
+    if (config.industryId) setIndustryId(config.industryId);
+    if (config.serviceId) setServiceId(config.serviceId);
+    if (config.buyerTypeId) setBuyerTypeId(config.buyerTypeId);
+    if (config.intentSignalIds) setIntentSignalIds(config.intentSignalIds);
+    setCountryId(config.countryId ?? "US");
+    setStateId(config.stateId ?? "");
+    setCustomRegion(config.customRegion ?? "");
+    setCity(config.city ?? "");
+    if (config.budgetBandId) setBudgetBandId(config.budgetBandId);
+    setCompanySizeId(config.companySizeId ?? "any");
+    setResultCount(config.resultCount ?? 10);
+    setExtraUrls(config.extraUrls ?? "");
+    setNotes(config.notes ?? "");
+  }
+
+  function loadPreset(id: string) {
+    setSelectedPresetId(id);
+    const preset = presets.find((p) => p.id === id);
+    if (!preset) return;
+    try {
+      applyConfig(JSON.parse(preset.config_json) as Partial<PresetConfig>);
+      setPresetName(preset.name);
+    } catch {
+      // ignore malformed preset config
+    }
+  }
+
+  async function savePreset() {
+    const name = presetName.trim();
+    if (!name) return;
+    const existing = presets.find((p) => p.name === name);
+    const saved = await saveSearchPreset({ id: existing?.id, name, config: currentConfig() });
+    setPresets(await listSearchPresets());
+    setSelectedPresetId(saved.id);
+  }
+
+  async function removePreset() {
+    if (!selectedPresetId) return;
+    await deleteSearchPreset(selectedPresetId);
+    setSelectedPresetId("");
+    setPresetName("");
+    setPresets(await listSearchPresets());
+  }
+
   async function startSearch() {
     setError(null);
+    if (country.hasStates && !stateId) {
+      setError("Pick a state, or choose Global if you don't want to filter by location.");
+      return;
+    }
     setBusy(true);
     try {
-      const queryText = [offer, location, audience, ticketSize]
-        .filter(Boolean)
-        .join(" · ");
+      const buyerLabel = buyerTypeLabel(buyerTypeId);
+      const niche = `${industry.label} — ${service.label}`;
+      const sizeSuffix =
+        companySizeId !== "any" ? ` (company size: ${companySizeLabel(companySizeId)})` : "";
+      const audience = `${buyerLabel}${sizeSuffix} needing ${service.label}`;
+      const ticketSize = budgetBandLabel(budgetBandId);
+
+      const regionLabel = country.hasStates ? stateLabel(stateId) : customRegion;
+      const location =
+        countryId === "GLOBAL"
+          ? ""
+          : [city, regionLabel, country.label].filter(Boolean).join(", ");
+
+      const queries = buildDeterministicQueries(intentSignalIds, {
+        vertical: service.label,
+        buyerType: buyerLabel,
+        city,
+        state: regionLabel,
+        country: country.label,
+      });
+
+      const queryText = [niche, location, audience, ticketSize].filter(Boolean).join(" · ");
+
       const search = await createProspectSearch({
         queryText,
-        niche: offer,
+        niche,
         location,
         audience,
         ticketSize,
-        sources,
+        sources: ["google"],
         extraUrls,
       });
       const job = await createJob({
@@ -87,13 +244,15 @@ export function ProspectPage() {
         payload: {
           searchId: search.id,
           queryText,
-          niche: offer,
+          niche,
           location,
           audience,
           ticketSize,
-          sources,
+          sources: ["google"],
           extraUrls,
-          maxResults,
+          maxResults: resultCount,
+          queries,
+          notes,
         },
       });
       setActiveJobId(job.id);
@@ -112,80 +271,249 @@ export function ProspectPage() {
           Prospect Search
         </h1>
         <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">
-          Tell us what you sell. The AI BDR finds people and businesses who may need it —
-          not competitors in your niche.
+          Pick who you're looking for. The AI BDR finds buyers who may need it — not
+          competitors in your niche.
         </p>
       </div>
 
       <Card>
         <CardHeader>
+          <CardTitle>Saved searches</CardTitle>
+          <CardDescription>Load a preset, or save the current setup for next time.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[220px] flex-1 space-y-1.5">
+            <Label>Preset</Label>
+            <Select value={selectedPresetId} onValueChange={loadPreset}>
+              <SelectTrigger>
+                <SelectValue placeholder={presets.length ? "Load a saved search…" : "No saved searches yet"} />
+              </SelectTrigger>
+              <SelectContent>
+                {presets.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="min-w-[180px] flex-1 space-y-1.5">
+            <Label>Save as</Label>
+            <Input
+              value={presetName}
+              onChange={(e) => setPresetName(e.target.value)}
+              placeholder="e.g. Austin web dev leads"
+            />
+          </div>
+          <Button variant="secondary" onClick={() => void savePreset()} disabled={!presetName.trim()}>
+            Save preset
+          </Button>
+          <Button variant="ghost" onClick={() => void removePreset()} disabled={!selectedPresetId}>
+            Delete
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Who are you looking for?</CardTitle>
           <CardDescription>
-            Example: if you sell relationship coaching, we hunt for people who want a
-            coach — not other coaches. If you build software, we hunt for clients who need
-            websites or apps.
+            Example: pick relationship coaching + individuals to hunt for people who want a
+            coach — not other coaches.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label>What you sell / offer</Label>
-            <Input
-              value={offer}
-              onChange={(e) => setOffer(e.target.value)}
-              placeholder="e.g. Relationship coaching · Website & app development"
-            />
-          </div>
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label>Ideal buyer (who needs your offer)</Label>
-            <Input
-              value={audience}
-              onChange={(e) => setAudience(e.target.value)}
-              placeholder="e.g. Couples struggling with communication · Local businesses without a modern website"
-            />
+          <div className="space-y-1.5">
+            <Label>Industry</Label>
+            <Select value={industryId} onValueChange={onIndustryChange}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {INDUSTRIES.map((i) => (
+                  <SelectItem key={i.id} value={i.id}>
+                    {i.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>Location</Label>
-            <Input
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="United States"
-            />
+            <Label>Service</Label>
+            <Select value={serviceId} onValueChange={(v) => applyServiceDefaults(industryId, v)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {industry.services.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Buyer type</Label>
+            <Select value={buyerTypeId} onValueChange={setBuyerTypeId}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {BUYER_TYPES.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>Client budget / ticket size</Label>
-            <Input
-              value={ticketSize}
-              onChange={(e) => setTicketSize(e.target.value)}
-              placeholder="What they can typically afford to pay you"
-            />
-            <p className="text-xs text-[var(--color-muted-foreground)]">
-              Rough budget of the buyer (not your competitors&apos; pricing).
-            </p>
+            <Label>Company size</Label>
+            <Select value={companySizeId} onValueChange={setCompanySizeId}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {COMPANY_SIZES.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+
           <div className="space-y-1.5 sm:col-span-2">
-            <Label>Sources</Label>
+            <Label>Buying signals to search for</Label>
             <div className="flex flex-wrap gap-2 pt-1">
-              {SOURCE_OPTIONS.map((s) => {
-                const on = sources.includes(s.id);
+              {service.intentSignals.map((signalId) => {
+                const signal = INTENT_SIGNALS[signalId];
+                if (!signal) return null;
+                const on = intentSignalIds.includes(signalId);
                 return (
                   <button
-                    key={s.id}
+                    key={signalId}
                     type="button"
-                    disabled={!s.ready}
-                    onClick={() => toggleSource(s.id, s.ready)}
+                    title={signal.description}
+                    onClick={() => toggleIntentSignal(signalId)}
                     className={`rounded-md border px-3 py-1.5 text-xs transition-colors ${
                       on
                         ? "border-[var(--color-primary)] bg-[var(--color-primary)]/15 text-[var(--color-primary)]"
                         : "border-[var(--color-border)] text-[var(--color-muted-foreground)]"
-                    } ${!s.ready ? "cursor-not-allowed opacity-50" : ""}`}
+                    }`}
                   >
-                    {s.label}
-                    {!s.ready && " · soon"}
+                    {signal.label}
                   </button>
                 );
               })}
             </div>
           </div>
+
+          <div className="space-y-1.5">
+            <Label>Country</Label>
+            <Select value={countryId} onValueChange={setCountryId}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {COUNTRIES.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {countryId !== "GLOBAL" && (
+            <>
+              <div className="space-y-1.5">
+                <Label>{country.hasStates ? "State" : "Region"}</Label>
+                {country.hasStates ? (
+                  <Select value={stateId} onValueChange={setStateId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a state" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {US_STATES.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    value={customRegion}
+                    onChange={(e) => setCustomRegion(e.target.value)}
+                    placeholder={`Region within ${country.label} (optional)`}
+                  />
+                )}
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>City (optional)</Label>
+                <Input
+                  list="major-us-cities"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  placeholder="Leave blank to search the whole state/region"
+                />
+                <datalist id="major-us-cities">
+                  {MAJOR_US_CITIES.map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
+              </div>
+            </>
+          )}
+
+          <div className="space-y-1.5">
+            <Label>Client budget</Label>
+            <Select value={budgetBandId} onValueChange={setBudgetBandId}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {BUDGET_BANDS.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Result count</Label>
+            <div className="flex gap-2 pt-1">
+              {RESULT_COUNT_OPTIONS.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setResultCount(n)}
+                  className={`flex-1 rounded-md border px-3 py-1.5 text-sm transition-colors ${
+                    resultCount === n
+                      ? "border-[var(--color-primary)] bg-[var(--color-primary)]/15 text-[var(--color-primary)]"
+                      : "border-[var(--color-border)] text-[var(--color-muted-foreground)]"
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label>Sources</Label>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <Badge variant="success">Google</Badge>
+              <span className="text-xs text-[var(--color-muted-foreground)]">
+                LinkedIn, Facebook, Reddit — coming soon
+              </span>
+            </div>
+          </div>
+
           <div className="space-y-1.5 sm:col-span-2">
             <Label>Extra prospect URLs (optional, one per line)</Label>
             <Textarea
@@ -195,16 +523,17 @@ export function ProspectPage() {
               onChange={(e) => setExtraUrls(e.target.value)}
             />
           </div>
-          <div className="space-y-1.5">
-            <Label>Max results</Label>
-            <Input
-              type="number"
-              min={1}
-              max={30}
-              value={maxResults}
-              onChange={(e) => setMaxResults(Number(e.target.value) || 8)}
+
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label>Anything else? (optional)</Label>
+            <Textarea
+              rows={2}
+              placeholder="Any detail the dropdowns above don't capture"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
             />
           </div>
+
           <div className="flex items-end">
             <Button onClick={() => void startSearch()} disabled={busy}>
               {busy ? "Queuing…" : "Find Leads"}
@@ -232,7 +561,7 @@ export function ProspectPage() {
         <CardContent>
           {events.length === 0 ? (
             <p className="text-sm text-[var(--color-muted-foreground)]">
-              No events yet. Building buyer-intent queries… Searching… Scoring leads…
+              No events yet. Searching… Analyzing… Scoring leads…
             </p>
           ) : (
             <ul className="max-h-72 space-y-1.5 overflow-auto font-mono text-xs">

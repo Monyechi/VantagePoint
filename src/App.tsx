@@ -10,10 +10,12 @@ import { SettingsPage } from "@/features/settings/SettingsPage";
 import { getDb } from "@/lib/db/client";
 import { ensureDefaultRouting } from "@/lib/ai/routing";
 import { startJobRunner, stopJobRunner } from "@/lib/jobs/runner";
+import { getSellerProfile, isSellerProfileComplete } from "@/lib/settings/sellerProfile";
 
 export default function App() {
   const [ready, setReady] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -22,7 +24,11 @@ export default function App() {
         await getDb();
         await ensureDefaultRouting();
         startJobRunner();
-        if (!cancelled) setReady(true);
+        const profile = await getSellerProfile();
+        if (!cancelled) {
+          setNeedsOnboarding(!isSellerProfileComplete(profile));
+          setReady(true);
+        }
       } catch (err) {
         if (!cancelled) {
           setBootError(err instanceof Error ? err.message : String(err));
@@ -62,7 +68,10 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route index element={<Navigate to="/prospect" replace />} />
+        <Route
+          index
+          element={<Navigate to={needsOnboarding ? "/settings" : "/prospect"} replace />}
+        />
         <Route path="prospect" element={<ProspectPage />} />
         <Route path="leads" element={<LeadsPage />} />
         <Route path="outreach" element={<OutreachPage />} />

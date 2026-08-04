@@ -8,7 +8,6 @@ export type ProviderId =
 
 export type TaskKind =
   | "website_analysis"
-  | "lead_scoring"
   | "lead_research"
   | "email_writing"
   | "linkedin_writing"
@@ -18,6 +17,8 @@ export interface CompletionRequest {
   system?: string;
   prompt: string;
   json?: boolean;
+  /** JSON schema to enforce via provider structured-output support (currently used by Anthropic). */
+  schema?: Record<string, unknown>;
   temperature?: number;
   maxTokens?: number;
 }
@@ -33,6 +34,9 @@ export interface CompletionResult {
 export interface ProviderModel {
   id: string;
   label: string;
+  /** USD per 1M input/output tokens — approximate public pricing for cost estimates */
+  inputPerM: number;
+  outputPerM: number;
 }
 
 export interface ProviderDefinition {
@@ -52,8 +56,7 @@ export interface ModelRouting {
 }
 
 export const TASK_KIND_LABELS: Record<TaskKind, string> = {
-  website_analysis: "Website Analysis",
-  lead_scoring: "Lead Scoring",
+  website_analysis: "Website Analysis & Scoring",
   lead_research: "Lead Research",
   email_writing: "Email Writing",
   linkedin_writing: "LinkedIn Writing",
@@ -68,8 +71,8 @@ export const PROVIDERS: ProviderDefinition[] = [
     apiStyle: "openai",
     implemented: true,
     models: [
-      { id: "deepseek-chat", label: "DeepSeek Chat (V4)" },
-      { id: "deepseek-reasoner", label: "DeepSeek Reasoner" },
+      { id: "deepseek-chat", label: "DeepSeek Chat (V4)", inputPerM: 0.14, outputPerM: 0.28 },
+      { id: "deepseek-reasoner", label: "DeepSeek Reasoner", inputPerM: 0.55, outputPerM: 2.19 },
     ],
   },
   {
@@ -79,8 +82,9 @@ export const PROVIDERS: ProviderDefinition[] = [
     apiStyle: "anthropic",
     implemented: true,
     models: [
-      { id: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" },
-      { id: "claude-haiku-4-20250514", label: "Claude Haiku 4" },
+      { id: "claude-opus-5", label: "Claude Opus 5", inputPerM: 5.0, outputPerM: 25.0 },
+      { id: "claude-sonnet-5", label: "Claude Sonnet 5", inputPerM: 3.0, outputPerM: 15.0 },
+      { id: "claude-haiku-4-5", label: "Claude Haiku 4.5", inputPerM: 1.0, outputPerM: 5.0 },
     ],
   },
   {
@@ -90,8 +94,8 @@ export const PROVIDERS: ProviderDefinition[] = [
     apiStyle: "openai",
     implemented: true,
     models: [
-      { id: "gpt-4.1-mini", label: "GPT-4.1 Mini" },
-      { id: "gpt-4.1", label: "GPT-4.1" },
+      { id: "gpt-4.1-mini", label: "GPT-4.1 Mini", inputPerM: 0.4, outputPerM: 1.6 },
+      { id: "gpt-4.1", label: "GPT-4.1", inputPerM: 2.0, outputPerM: 8.0 },
     ],
   },
   {
@@ -101,8 +105,8 @@ export const PROVIDERS: ProviderDefinition[] = [
     apiStyle: "gemini",
     implemented: true,
     models: [
-      { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-      { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+      { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash", inputPerM: 0.1, outputPerM: 0.4 },
+      { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", inputPerM: 1.25, outputPerM: 10.0 },
     ],
   },
   {
@@ -112,8 +116,8 @@ export const PROVIDERS: ProviderDefinition[] = [
     apiStyle: "openai",
     implemented: true,
     models: [
-      { id: "moonshot-v1-128k", label: "Kimi 128k" },
-      { id: "moonshot-v1-32k", label: "Kimi 32k" },
+      { id: "moonshot-v1-128k", label: "Kimi 128k", inputPerM: 0.6, outputPerM: 2.5 },
+      { id: "moonshot-v1-32k", label: "Kimi 32k", inputPerM: 0.6, outputPerM: 2.5 },
     ],
   },
   {
@@ -123,17 +127,16 @@ export const PROVIDERS: ProviderDefinition[] = [
     apiStyle: "openai",
     implemented: true,
     models: [
-      { id: "grok-3-mini", label: "Grok 3 Mini" },
-      { id: "grok-3", label: "Grok 3" },
+      { id: "grok-3-mini", label: "Grok 3 Mini", inputPerM: 0.3, outputPerM: 0.5 },
+      { id: "grok-3", label: "Grok 3", inputPerM: 3.0, outputPerM: 15.0 },
     ],
   },
 ];
 
 export const DEFAULT_ROUTING: ModelRouting[] = [
   { taskKind: "website_analysis", providerId: "deepseek", modelId: "deepseek-chat" },
-  { taskKind: "lead_scoring", providerId: "deepseek", modelId: "deepseek-chat" },
   { taskKind: "lead_research", providerId: "deepseek", modelId: "deepseek-chat" },
-  { taskKind: "email_writing", providerId: "claude", modelId: "claude-sonnet-4-20250514" },
-  { taskKind: "linkedin_writing", providerId: "claude", modelId: "claude-sonnet-4-20250514" },
-  { taskKind: "facebook_writing", providerId: "claude", modelId: "claude-sonnet-4-20250514" },
+  { taskKind: "email_writing", providerId: "claude", modelId: "claude-sonnet-5" },
+  { taskKind: "linkedin_writing", providerId: "claude", modelId: "claude-sonnet-5" },
+  { taskKind: "facebook_writing", providerId: "claude", modelId: "claude-sonnet-5" },
 ];

@@ -8,6 +8,7 @@ import {
 } from "@/lib/ai/types";
 import { listRouting, setRouting } from "@/lib/ai/routing";
 import { estimateCostPer1000, formatUsd } from "@/lib/ai/pricing";
+import { listApiKeys } from "@/lib/db/queries";
 import {
   Card,
   CardContent,
@@ -20,9 +21,13 @@ import { Label } from "@/components/ui/label";
 export function AIModelsPage() {
   const [routing, setRoutingState] = useState<ModelRouting[]>([]);
   const [saving, setSaving] = useState<string | null>(null);
+  const [keyStatus, setKeyStatus] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     void listRouting().then(setRoutingState);
+    void listApiKeys().then((rows) => {
+      setKeyStatus(Object.fromEntries(rows.map((r) => [r.provider, r.hasKey])));
+    });
   }, []);
 
   async function onChange(taskKind: TaskKind, providerId: ProviderId) {
@@ -57,8 +62,9 @@ export function AIModelsPage() {
       <div className="space-y-4">
         {routing.map((row) => {
           const provider = PROVIDERS.find((p) => p.id === row.providerId);
-          const estimate = estimateCostPer1000(row.providerId, row.taskKind);
-          const deepseekEst = estimateCostPer1000("deepseek", row.taskKind);
+          const estimate = estimateCostPer1000(row.providerId, row.modelId, row.taskKind);
+          const deepseekModelId = PROVIDERS.find((p) => p.id === "deepseek")!.models[0]!.id;
+          const deepseekEst = estimateCostPer1000("deepseek", deepseekModelId, row.taskKind);
           const savings =
             estimate.cost > 0
               ? Math.round((1 - deepseekEst.cost / estimate.cost) * 100)
@@ -114,6 +120,12 @@ export function AIModelsPage() {
                     ))}
                   </select>
                 </div>
+                {keyStatus[row.providerId] === false && (
+                  <p className="text-xs text-[var(--color-warning)] sm:col-span-2">
+                    ⚠ No API key saved for {provider?.name ?? row.providerId} — add one in
+                    Settings before running this task.
+                  </p>
+                )}
               </CardContent>
             </Card>
           );

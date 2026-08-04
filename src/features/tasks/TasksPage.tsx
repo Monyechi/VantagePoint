@@ -1,13 +1,16 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   listJobs,
   listJobEvents,
+  sumUsageForJob,
   updateJob,
   type JobEvent,
   type JobRow,
+  type UsageSummary,
 } from "@/lib/db/queries";
 import { subscribeJobs } from "@/lib/jobs/runner";
 import { nowIso } from "@/lib/db/client";
+import { formatUsd } from "@/lib/ai/pricing";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -43,28 +46,38 @@ export function TasksPage() {
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [selected, setSelected] = useState<JobRow | null>(null);
   const [events, setEvents] = useState<JobEvent[]>([]);
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
 
-  async function refresh() {
+  const selectedRef = useRef<JobRow | null>(null);
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
+
+  const refresh = useCallback(async () => {
     const rows = await listJobs();
     setJobs(rows);
-    if (selected) {
-      const updated = rows.find((j) => j.id === selected.id) ?? null;
+    const current = selectedRef.current;
+    if (current) {
+      const updated = rows.find((j) => j.id === current.id) ?? null;
       setSelected(updated);
-      if (updated) setEvents(await listJobEvents(updated.id));
+      if (updated) {
+        setEvents(await listJobEvents(updated.id));
+        setUsage(await sumUsageForJob(updated.id));
+      }
     }
-  }
+  }, []);
 
   useEffect(() => {
     void refresh();
     return subscribeJobs(() => {
       void refresh();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refresh]);
 
   async function selectJob(job: JobRow) {
     setSelected(job);
     setEvents(await listJobEvents(job.id));
+    setUsage(await sumUsageForJob(job.id));
   }
 
   async function cancelJob(job: JobRow) {
@@ -164,7 +177,21 @@ export function TasksPage() {
             <CardHeader>
               <CardTitle>Activity log</CardTitle>
               <CardDescription>
-                {selected ? selected.id.slice(0, 8) : "Select a task"}
+                {selected ? (
+                  <>
+                    {selected.id.slice(0, 8)}
+                    {usage && usage.totalInputTokens + usage.totalOutputTokens > 0 && (
+                      <>
+                        {" "}
+                        · {formatUsd(usage.totalCostUsd)} ·{" "}
+                        {(usage.totalInputTokens + usage.totalOutputTokens).toLocaleString()}{" "}
+                        tokens
+                      </>
+                    )}
+                  </>
+                ) : (
+                  "Select a task"
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>
