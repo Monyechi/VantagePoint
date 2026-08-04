@@ -53,16 +53,22 @@ async function runDraftOutreach(job: JobRow): Promise<void> {
         : "Facebook outreach message";
 
   const result = await completeWithRouting(taskKind, {
-    system: `You write concise, personalized ${channelLabel} copy for business development. Be warm, specific, and non-spammy. Avoid hype.`,
-    prompt: `Write a ${channelLabel} to this prospect.
+    system: `You write concise, personalized ${channelLabel} copy to sell the user's offer to a potential CLIENT.
+You are helping the user win business — not networking with peers. Be warm, specific, and non-spammy. Avoid hype.`,
+    prompt: `Write a ${channelLabel} from the seller to this lead.
 
+Seller's offer / campaign: ${lead.campaign || "their services"}
+
+Lead:
 Business: ${lead.business}
 Name: ${lead.name || "there"}
 Website: ${lead.website}
 Email: ${lead.email || "unknown"}
 Summary: ${lead.summary || ""}
-Pain points: ${lead.pain_points || ""}
-Score reasons: ${lead.score_reasons || ""}
+Pain points / needs: ${lead.pain_points || ""}
+Why they scored as a lead: ${lead.score_reasons || ""}
+
+Pitch how the seller's offer can help THIS lead. Do not write as if contacting a competitor.
 
 ${
   payload.channel === "email"

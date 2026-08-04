@@ -29,10 +29,15 @@ const SOURCE_OPTIONS = [
 ];
 
 export function ProspectPage() {
-  const [niche, setNiche] = useState("Relationship Coaches");
+  // "niche" in the DB = what YOU sell / offer (not who your peers are)
+  const [offer, setOffer] = useState(
+    "Website, mobile app, and desktop app development",
+  );
   const [location, setLocation] = useState("United States");
-  const [audience, setAudience] = useState("Women 30-50");
-  const [ticketSize, setTicketSize] = useState("High Ticket");
+  const [audience, setAudience] = useState(
+    "Small businesses and startups that need software built",
+  );
+  const [ticketSize, setTicketSize] = useState("Mid to high ticket projects");
   const [sources, setSources] = useState<string[]>(["google"]);
   const [extraUrls, setExtraUrls] = useState("");
   const [maxResults, setMaxResults] = useState(8);
@@ -64,12 +69,12 @@ export function ProspectPage() {
     setError(null);
     setBusy(true);
     try {
-      const queryText = [niche, location, audience, ticketSize]
+      const queryText = [offer, location, audience, ticketSize]
         .filter(Boolean)
         .join(" · ");
       const search = await createProspectSearch({
         queryText,
-        niche,
+        niche: offer,
         location,
         audience,
         ticketSize,
@@ -82,7 +87,7 @@ export function ProspectPage() {
         payload: {
           searchId: search.id,
           queryText,
-          niche,
+          niche: offer,
           location,
           audience,
           ticketSize,
@@ -107,31 +112,55 @@ export function ProspectPage() {
           Prospect Search
         </h1>
         <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">
-          Describe your ideal client. The AI BDR will search, read sites, score, and add leads.
+          Tell us what you sell. The AI BDR finds people and businesses who may need it —
+          not competitors in your niche.
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Ideal client</CardTitle>
-          <CardDescription>ICP fields used for search and scoring</CardDescription>
+          <CardTitle>Who are you looking for?</CardTitle>
+          <CardDescription>
+            Example: if you sell relationship coaching, we hunt for people who want a
+            coach — not other coaches. If you build software, we hunt for clients who need
+            websites or apps.
+          </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label>Niche / Role</Label>
-            <Input value={niche} onChange={(e) => setNiche(e.target.value)} />
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label>What you sell / offer</Label>
+            <Input
+              value={offer}
+              onChange={(e) => setOffer(e.target.value)}
+              placeholder="e.g. Relationship coaching · Website & app development"
+            />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label>Ideal buyer (who needs your offer)</Label>
+            <Input
+              value={audience}
+              onChange={(e) => setAudience(e.target.value)}
+              placeholder="e.g. Couples struggling with communication · Local businesses without a modern website"
+            />
           </div>
           <div className="space-y-1.5">
             <Label>Location</Label>
-            <Input value={location} onChange={(e) => setLocation(e.target.value)} />
+            <Input
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="United States"
+            />
           </div>
           <div className="space-y-1.5">
-            <Label>Audience</Label>
-            <Input value={audience} onChange={(e) => setAudience(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Ticket size</Label>
-            <Input value={ticketSize} onChange={(e) => setTicketSize(e.target.value)} />
+            <Label>Client budget / ticket size</Label>
+            <Input
+              value={ticketSize}
+              onChange={(e) => setTicketSize(e.target.value)}
+              placeholder="What they can typically afford to pay you"
+            />
+            <p className="text-xs text-[var(--color-muted-foreground)]">
+              Rough budget of the buyer (not your competitors&apos; pricing).
+            </p>
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label>Sources</Label>
@@ -158,10 +187,10 @@ export function ProspectPage() {
             </div>
           </div>
           <div className="space-y-1.5 sm:col-span-2">
-            <Label>Extra website URLs (optional, one per line)</Label>
+            <Label>Extra prospect URLs (optional, one per line)</Label>
             <Textarea
               rows={3}
-              placeholder="https://example.com&#10;https://another.com"
+              placeholder="Paste specific company or person pages to score as potential clients"
               value={extraUrls}
               onChange={(e) => setExtraUrls(e.target.value)}
             />
@@ -178,7 +207,7 @@ export function ProspectPage() {
           </div>
           <div className="flex items-end">
             <Button onClick={() => void startSearch()} disabled={busy}>
-              {busy ? "Queuing…" : "Start Search"}
+              {busy ? "Queuing…" : "Find Leads"}
             </Button>
           </div>
           {error && (
@@ -203,7 +232,7 @@ export function ProspectPage() {
         <CardContent>
           {events.length === 0 ? (
             <p className="text-sm text-[var(--color-muted-foreground)]">
-              No events yet. Searching Google… Reading websites… Scoring prospects…
+              No events yet. Building buyer-intent queries… Searching… Scoring leads…
             </p>
           ) : (
             <ul className="max-h-72 space-y-1.5 overflow-auto font-mono text-xs">

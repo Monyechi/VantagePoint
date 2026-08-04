@@ -27,7 +27,7 @@ export function AppShell() {
             ClientPilot
           </div>
           <div className="mt-0.5 text-xs text-[var(--color-muted-foreground)]">
-            AI BDR Workforce
+            Find clients · AI BDR
           </div>
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 p-2">

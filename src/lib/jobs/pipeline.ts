@@ -58,6 +58,55 @@ function normalizeUrl(url: string): string {
   }
 }
 
+function offerBrief(payload: ProspectSearchPayload): string {
+  return [
+    `What the user SELLS (their offer): ${payload.niche || "their service"}`,
+    payload.audience && `Ideal BUYER: ${payload.audience}`,
+    payload.location && `Location focus: ${payload.location}`,
+    payload.ticketSize && `Buyer budget / ticket: ${payload.ticketSize}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** Fallback Google queries that hunt for buyers, not peers in the niche. */
+function fallbackBuyerQueries(payload: ProspectSearchPayload): string[] {
+  const offer = payload.niche || "service";
+  const loc = payload.location || "";
+  const audience = payload.audience || "";
+  return [
+    `"looking for" OR "need" OR "hire" OR "seeking" (${offer}) ${loc}`.trim(),
+    `${audience} ${loc} (need OR looking for OR hire) ${offer}`.trim(),
+    `${loc} small business OR startup "need a website" OR "need an app" OR "looking for developer" OR "looking for coach"`.trim(),
+  ].filter((q) => q.length > 8);
+}
+
+async function buildBuyerSearchQueries(
+  payload: ProspectSearchPayload,
+): Promise<string[]> {
+  try {
+    const result = await completeWithRouting("lead_research", {
+      system: `You help a salesperson find LEADS — people or businesses who might BUY their offer.
+Never invent queries that find competitors or peers who sell the same thing.
+Return strict JSON: { "queries": string[] } with 3-5 Google search queries that surface buyer intent
+(e.g. "looking for", "need", "hire", pain points, RFPs, outdated tech, "recommend a …").`,
+      prompt: `${offerBrief(payload)}
+
+Generate Google queries to find potential CLIENTS for this offer in the target location/audience.
+Bad example for a relationship coach: "relationship coaches United States" (that finds peers).
+Good example: "looking for relationship coach", "need marriage counseling [city]", dating/communication help forums.`,
+      json: true,
+      temperature: 0.4,
+    });
+    const parsed = parseJsonLoose<{ queries?: string[] }>(result.text);
+    const queries = (parsed.queries ?? []).map((q) => q.trim()).filter(Boolean);
+    if (queries.length > 0) return queries.slice(0, 5);
+  } catch {
+    // fall through
+  }
+  return fallbackBuyerQueries(payload);
+}
+
 async function searchSerpApi(
   query: string,
   maxResults: number,
@@ -146,12 +195,18 @@ export async function runProspectSearchJob(job: JobRow): Promise<void> {
     }
 
     if (payload.sources.includes("google")) {
-      await log("Searching Google via SerpAPI...");
+      await log("Planning buyer-intent Google queries (not competitor search)...");
+      const queries = await buildBuyerSearchQueries(payload);
+      for (const q of queries) {
+        await log(`Search: ${q}`);
+      }
       try {
-        const results = await searchSerpApi(payload.queryText, maxResults);
-        await log(`Found ${results.length} Google results`);
-        for (const r of results) {
-          if (!urls.some((u) => u.link === r.link)) urls.push(r);
+        for (const q of queries) {
+          const results = await searchSerpApi(q, maxResults);
+          await log(`Found ${results.length} results for query`);
+          for (const r of results) {
+            if (!urls.some((u) => u.link === r.link)) urls.push(r);
+          }
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -177,18 +232,10 @@ export async function runProspectSearchJob(job: JobRow): Promise<void> {
     }
 
     const target = urls.slice(0, maxResults);
-    await log(`Processing ${target.length} websites...`);
+    await log(`Processing ${target.length} potential client leads...`);
     await updateJob(job.id, { progress: 15 });
 
-    const icp = [
-      payload.niche && `Niche: ${payload.niche}`,
-      payload.location && `Location: ${payload.location}`,
-      payload.audience && `Audience: ${payload.audience}`,
-      payload.ticketSize && `Ticket: ${payload.ticketSize}`,
-      `Query: ${payload.queryText}`,
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const icp = offerBrief(payload);
 
     let processed = 0;
     for (const item of target) {
@@ -205,14 +252,24 @@ export async function runProspectSearchJob(job: JobRow): Promise<void> {
         summary?: string;
         pain_points?: string[];
         fit_notes?: string;
+        likely_buyer?: boolean;
       } = {};
 
       if (pageText.length > 100) {
-        await log(`Analyzing ${website}...`);
+        await log(`Analyzing as potential client for your offer...`);
         const result = await completeWithRouting("website_analysis", {
-          system:
-            "You are a BDR research assistant. Return strict JSON only with keys: business_name, contact_name, email, summary, pain_points (array of strings), fit_notes.",
-          prompt: `Ideal client profile:\n${icp}\n\nWebsite: ${website}\nSearch snippet: ${item.snippet}\n\nPage content:\n${pageText.slice(0, 9000)}\n\nExtract structured prospect data.`,
+          system: `You research sales LEADS for a seller. The prospect should be someone who might BUY the seller's offer — not a competitor who sells the same thing.
+Return strict JSON: business_name, contact_name, email, summary, pain_points (string[]), fit_notes, likely_buyer (boolean).
+Mark likely_buyer false if this looks like a peer/competitor (e.g. another coach when the seller IS a coach).`,
+          prompt: `${icp}
+
+Candidate page: ${website}
+Search snippet: ${item.snippet}
+
+Page content:
+${pageText.slice(0, 9000)}
+
+Extract who they are and whether they might need the seller's offer.`,
           json: true,
           temperature: 0.2,
         });
@@ -224,18 +281,26 @@ export async function runProspectSearchJob(job: JobRow): Promise<void> {
           summary: item.snippet || "Could not fetch page content.",
           pain_points: [],
           fit_notes: "Limited data",
+          likely_buyer: true,
         };
       }
 
-      await log(`Scoring ${website}...`);
+      await log(`Scoring lead fit (buyer for your offer)...`);
       const scoreResult = await completeWithRouting("lead_scoring", {
-        system:
-          "You score B2B/B2C prospects from 0-100. Return JSON: { score: number, reasons: string[] }",
-        prompt: `ICP:\n${icp}\n\nProspect:\n${JSON.stringify({
-          website,
-          ...analysis,
-          snippet: item.snippet,
-        })}\n\nScore fit for outreach.`,
+        system: `Score 0-100 how good this lead is as a CLIENT for the seller's offer.
+Penalize heavily if they appear to be a competitor/peer selling the same service.
+Reward clear need, budget fit, location fit, and outreachability.
+Return JSON: { score: number, reasons: string[] }`,
+        prompt: `${icp}
+
+Prospect:
+${JSON.stringify({
+  website,
+  ...analysis,
+  snippet: item.snippet,
+})}
+
+Score as a sales lead for the seller (someone to sell TO).`,
         json: true,
         temperature: 0.1,
       });
@@ -243,10 +308,12 @@ export async function runProspectSearchJob(job: JobRow): Promise<void> {
         scoreResult.text,
       );
 
-      const email =
-        analysis.email ||
-        emailsFromPage[0] ||
-        null;
+      let score = Math.max(0, Math.min(100, Math.round(scored.score ?? 0)));
+      if (analysis.likely_buyer === false) {
+        score = Math.min(score, 35);
+      }
+
+      const email = analysis.email || emailsFromPage[0] || null;
 
       await upsertLead({
         searchId: payload.searchId,
@@ -254,7 +321,7 @@ export async function runProspectSearchJob(job: JobRow): Promise<void> {
         business: analysis.business_name || item.title,
         email: email ?? undefined,
         website,
-        score: Math.max(0, Math.min(100, Math.round(scored.score ?? 0))),
+        score,
         summary: analysis.summary,
         painPoints: (analysis.pain_points ?? []).join("\n"),
         scoreReasons: (scored.reasons ?? []).join("\n"),
@@ -265,7 +332,7 @@ export async function runProspectSearchJob(job: JobRow): Promise<void> {
       const progress = 15 + Math.round((processed / target.length) * 80);
       await updateJob(job.id, { progress });
       await log(
-        `Saved lead ${analysis.business_name || website} (score ${scored.score})`,
+        `Saved lead ${analysis.business_name || website} (score ${score})`,
       );
     }
 

@@ -2,7 +2,12 @@
 
 Desktop AI Workforce OS — first employee: **AI Business Development Representative**.
 
-Local-first Tauri app: Prospect Search → Leads CRM → Outreach → Tasks, with per-task AI model routing (DeepSeek for workers, Claude for writing by default).
+Local-first Tauri app that finds **leads who may need what you sell** (clients), not competitors in your niche. Prospect Search → Leads CRM → Outreach → Tasks, with per-task AI model routing (DeepSeek for workers, Claude for writing by default).
+
+## Core idea
+
+If you offer **relationship coaching**, the app looks for people who want coaching.  
+If you build **websites and apps**, it looks for businesses that need software — not other developers.
 
 ## Prerequisites
 
@@ -17,14 +22,16 @@ npm install
 npm run tauri:dev
 ```
 
+Or double-click `Start ClientPilot.bat`.
+
 ## Configure
 
 1. **Settings** — paste API keys (DeepSeek, Claude, optional SerpAPI for Google search)
-2. **AI Models** — confirm per-task providers (cost estimates shown per 1,000 tasks)
-3. **Prospect Search** — describe ICP, optionally paste Extra URLs, Start Search
-4. **Leads** / **Outreach** / **Tasks** — review scored leads, generate copy, approve
+2. **AI Models** — confirm per-task providers
+3. **Prospect Search** — what you sell, who the buyer is, location, budget → Find Leads
+4. **Leads** / **Outreach** / **Tasks** — review scored potential clients, generate copy, approve
 
-Without SerpAPI, Extra URLs still run fetch → analyze → score.
+Without SerpAPI, paste Extra URLs of companies/people to still analyze + score as clients.
 
 ## Stack
 

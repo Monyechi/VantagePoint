@@ -34,7 +34,7 @@ export function LeadsPage() {
             Leads
           </h1>
           <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">
-            CRM for prospects discovered by your AI BDR
+            Potential clients who may need what you sell
           </p>
         </div>
 
