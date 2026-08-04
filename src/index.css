@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Segoe UI", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Segoe UI Semibold", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --color-background: #0f1419;
+  --color-foreground: #e8eef4;
+  --color-card: #171d25;
+  --color-card-foreground: #e8eef4;
+  --color-muted: #1e2630;
+  --color-muted-foreground: #8b9aab;
+  --color-border: #2a3441;
+  --color-primary: #3d9a7a;
+  --color-primary-foreground: #06140f;
+  --color-accent: #2a5f8f;
+  --color-accent-foreground: #e8eef4;
+  --color-destructive: #c45c5c;
+  --color-ring: #3d9a7a;
+  --color-sidebar: #0c1015;
+  --color-success: #3d9a7a;
+  --color-warning: #c9a227;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: radial-gradient(1200px 600px at 10% -10%, #1a2836 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, #13261f 0%, transparent 50%),
+    var(--color-background);
+  color: var(--color-foreground);
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a3441;
+  border-radius: 4px;
+}
