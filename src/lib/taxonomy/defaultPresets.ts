@@ -24,6 +24,7 @@ export function buildDefaultPresets(): { name: string; config: PresetConfig }[] 
       stateId: "",
       customRegion: "",
       city: "",
+      customIntentSignals: [],
       budgetBandId: INDUSTRY_BUDGET_DEFAULTS[industry.id] ?? "1k_5k",
       companySizeId: "any",
       resultCount: 10,

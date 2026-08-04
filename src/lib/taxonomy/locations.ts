@@ -13,6 +13,8 @@ export const COUNTRIES: CountryOption[] = [
   { id: "GLOBAL", label: "Global / not location-specific", hasStates: false },
 ];
 
+export const COUNTRYWIDE_STATE_ID = "COUNTRYWIDE";
+
 export const US_STATES: { id: string; label: string }[] = [
   { id: "AL", label: "Alabama" },
   { id: "AK", label: "Alaska" },
@@ -121,6 +123,11 @@ export function countryLabel(id: string): string {
   return COUNTRIES.find((c) => c.id === id)?.label ?? id;
 }
 
+export function isCountrywideState(stateId: string): boolean {
+  return stateId === COUNTRYWIDE_STATE_ID;
+}
+
 export function stateLabel(id: string): string {
+  if (isCountrywideState(id)) return "";
   return US_STATES.find((s) => s.id === id)?.label ?? id;
 }

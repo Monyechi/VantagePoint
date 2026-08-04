@@ -31,6 +31,17 @@ export interface LocalBusinessSearchPayload {
   maxResults: number;
 }
 
+/** Sentinel value for a broad search across all business types. */
+export const BROAD_BUSINESS_TYPE = "__all__";
+
+export function businessTypeLabel(businessType: string): string {
+  return businessType === BROAD_BUSINESS_TYPE ? "All business types" : businessType;
+}
+
+export function businessTypeSearchQuery(businessType: string): string {
+  return businessType === BROAD_BUSINESS_TYPE ? "local business" : businessType;
+}
+
 const SITE_CONCURRENCY = 3;
 
 async function fetchFirstNonEmpty(urls: string[]): Promise<string> {
@@ -55,21 +66,22 @@ export async function runLocalBusinessSearchJob(job: JobRow): Promise<void> {
     appendJobEvent(job.id, msg, level);
 
   try {
-    await log(`Starting local business search: ${payload.businessType} near ${payload.location}`);
+    const typeLabel = businessTypeLabel(payload.businessType);
+    await log(`Starting local business search: ${typeLabel} near ${payload.location}`);
     await updateJob(job.id, { progress: 5 });
 
     const center = await geocodeLocation(payload.location);
     await assertNotCancelled(job.id);
 
     const places = await searchPlacesText(
-      payload.businessType,
+      businessTypeSearchQuery(payload.businessType),
       center,
       payload.radiusMiles,
       payload.maxResults,
     );
     if (places.length === 0) {
       throw new Error(
-        `No "${payload.businessType}" businesses found near ${payload.location}. Try a wider radius or a different business type.`,
+        `No ${typeLabel.toLowerCase()} businesses found near ${payload.location}. Try a wider radius or a different business type.`,
       );
     }
     await log(`Found ${places.length} business(es) on Google Places.`);
@@ -122,7 +134,7 @@ export async function runLocalBusinessSearchJob(job: JobRow): Promise<void> {
 
     const sellerProfile = await getSellerProfile();
     const sellerBrief = sellerProfileBrief(sellerProfile);
-    const campaign = `Local Business Hunter: ${payload.businessType} in ${payload.location}`;
+    const campaign = `Local Business Hunter: ${typeLabel} in ${payload.location}`;
     const total = noWebsite.length + analyzed.length;
     let processed = 0;
 

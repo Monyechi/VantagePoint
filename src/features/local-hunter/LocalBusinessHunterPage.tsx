@@ -19,6 +19,10 @@ import {
   type Lead,
 } from "@/lib/db/queries";
 import { subscribeJobs } from "@/lib/jobs/runner";
+import {
+  BROAD_BUSINESS_TYPE,
+  businessTypeLabel,
+} from "@/lib/jobs/localBusinessPipeline";
 
 const BUSINESS_TYPE_SUGGESTIONS = [
   "Dentist",
@@ -63,6 +67,7 @@ function parseFlags(lead: Lead): string[] {
 export function LocalBusinessHunterPage() {
   const [location, setLocation] = useState("");
   const [businessType, setBusinessType] = useState("");
+  const [broadBusinessType, setBroadBusinessType] = useState(false);
   const [radiusMiles, setRadiusMiles] = useState(10);
   const [maxResults, setMaxResults] = useState(20);
   const [avgProjectValue, setAvgProjectValue] = useState("");
@@ -88,16 +93,24 @@ export function LocalBusinessHunterPage() {
 
   async function startSearch() {
     setError(null);
-    if (!location.trim() || !businessType.trim()) {
-      setError("Enter both a location and a business type.");
+    if (!location.trim()) {
+      setError("Enter a city or location.");
+      return;
+    }
+    if (!broadBusinessType && !businessType.trim()) {
+      setError("Enter a business type, or choose All business types.");
       return;
     }
     setBusy(true);
     try {
-      const queryText = `${businessType} near ${location}`;
+      const effectiveBusinessType = broadBusinessType
+        ? BROAD_BUSINESS_TYPE
+        : businessType.trim();
+      const typeLabel = businessTypeLabel(effectiveBusinessType);
+      const queryText = `${typeLabel} near ${location}`;
       const search = await createProspectSearch({
         queryText,
-        niche: businessType,
+        niche: typeLabel,
         location,
         audience: `${radiusMiles} mile radius`,
         ticketSize: avgProjectValue.trim() || undefined,
@@ -110,7 +123,7 @@ export function LocalBusinessHunterPage() {
           searchId: search.id,
           queryText,
           location,
-          businessType,
+          businessType: effectiveBusinessType,
           radiusMiles,
           maxResults,
         },
@@ -160,12 +173,33 @@ export function LocalBusinessHunterPage() {
           </div>
           <div className="space-y-1.5">
             <Label>Business type</Label>
-            <Input
-              list="business-type-suggestions"
-              value={businessType}
-              onChange={(e) => setBusinessType(e.target.value)}
-              placeholder="Dentist"
-            />
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setBroadBusinessType((prev) => !prev);
+                  if (!broadBusinessType) setBusinessType("");
+                }}
+                className={`shrink-0 rounded-md border px-3 py-1.5 text-sm transition-colors ${
+                  broadBusinessType
+                    ? "border-[var(--color-primary)] bg-[var(--color-primary)]/15 text-[var(--color-primary)]"
+                    : "border-[var(--color-border)] text-[var(--color-muted-foreground)]"
+                }`}
+              >
+                All types
+              </button>
+              <Input
+                list="business-type-suggestions"
+                value={businessType}
+                onChange={(e) => {
+                  setBusinessType(e.target.value);
+                  if (e.target.value.trim()) setBroadBusinessType(false);
+                }}
+                disabled={broadBusinessType}
+                placeholder={broadBusinessType ? "Searching all business types" : "Dentist"}
+                className="flex-1"
+              />
+            </div>
             <datalist id="business-type-suggestions">
               {BUSINESS_TYPE_SUGGESTIONS.map((b) => (
                 <option key={b} value={b} />

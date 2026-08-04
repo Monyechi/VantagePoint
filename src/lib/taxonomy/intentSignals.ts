@@ -100,11 +100,18 @@ export const INTENT_QUERY_TEMPLATES: Record<string, (ctx: QueryContext) => strin
 export function buildDeterministicQueries(
   signalIds: string[],
   ctx: QueryContext,
+  customSignalLabels: string[] = [],
 ): string[] {
   const queries: string[] = [];
   for (const id of signalIds) {
     const build = INTENT_QUERY_TEMPLATES[id];
     if (build) queries.push(...build(ctx));
+  }
+  for (const label of customSignalLabels) {
+    const trimmed = label.trim();
+    if (!trimmed) continue;
+    queries.push(`"${trimmed}" ${loc(ctx)} ${ctx.vertical}`);
+    queries.push(`${trimmed} ${loc(ctx)} "${ctx.buyerType}"`);
   }
   return [...new Set(queries)].slice(0, 8);
 }

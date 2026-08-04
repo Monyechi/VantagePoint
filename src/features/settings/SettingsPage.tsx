@@ -68,18 +68,38 @@ export function SettingsPage() {
     await setTheme(next);
   }
 
+  function clearTestResult(provider: string) {
+    setTestResults((prev) => {
+      if (!(provider in prev)) return prev;
+      const next = { ...prev };
+      delete next[provider];
+      return next;
+    });
+  }
+
   async function save(provider: string) {
     await setApiKey(provider, keys[provider]?.trim() ?? "");
     setStatus(await listApiKeys());
+    clearTestResult(provider);
     setSaved(provider);
     setTimeout(() => setSaved(null), 1500);
   }
 
   async function testKey(provider: string) {
     setTesting(provider);
+    clearTestResult(provider);
     try {
+      // Persist the input value first so Test always exercises what's on screen,
+      // not a previously saved (and possibly rejected) key.
+      await setApiKey(provider, keys[provider]?.trim() ?? "");
+      setStatus(await listApiKeys());
       const result = await testProviderKey(provider as ProviderId);
       setTestResults((prev) => ({ ...prev, [provider]: result }));
+    } catch (err) {
+      setTestResults((prev) => ({
+        ...prev,
+        [provider]: { ok: false, message: err instanceof Error ? err.message : String(err) },
+      }));
     } finally {
       setTesting(null);
     }
@@ -272,16 +292,18 @@ export function SettingsPage() {
                     autoComplete="off"
                     placeholder={`Enter ${row.name} API key`}
                     value={keys[row.id] ?? ""}
-                    onChange={(e) =>
-                      setKeys((prev) => ({ ...prev, [row.id]: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setKeys((prev) => ({ ...prev, [row.id]: value }));
+                      clearTestResult(row.id);
+                    }}
                   />
                   <Button variant="secondary" onClick={() => void save(row.id)}>
                     {saved === row.id ? "Saved" : "Save"}
                   </Button>
                   <Button
                     variant="outline"
-                    disabled={!has || testing === row.id}
+                    disabled={!(keys[row.id]?.trim()) || testing === row.id}
                     onClick={() => void testKey(row.id)}
                   >
                     {testing === row.id ? "Testing…" : "Test"}

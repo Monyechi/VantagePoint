@@ -57,10 +57,20 @@ export function ConnectorsPage() {
     })();
   }, []);
 
+  function clearTestResult(id: string) {
+    setTestResults((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }
+
   async function saveKey(id: string) {
     const trimmed = keys[id]?.trim() ?? "";
     await setApiKey(id, trimmed);
     setSavedKeys((prev) => ({ ...prev, [id]: Boolean(trimmed) }));
+    clearTestResult(id);
     setSaved(id);
     setTimeout(() => setSaved(null), 1500);
   }
@@ -75,9 +85,20 @@ export function ConnectorsPage() {
     const tester = TESTERS[id];
     if (!tester) return;
     setTesting(id);
+    clearTestResult(id);
     try {
+      // Persist the input value first so Test always exercises what's on screen,
+      // not a previously saved (and possibly rejected) key.
+      const trimmed = keys[id]?.trim() ?? "";
+      await setApiKey(id, trimmed);
+      setSavedKeys((prev) => ({ ...prev, [id]: Boolean(trimmed) }));
       const result = await tester();
       setTestResults((prev) => ({ ...prev, [id]: result }));
+    } catch (err) {
+      setTestResults((prev) => ({
+        ...prev,
+        [id]: { ok: false, message: err instanceof Error ? err.message : String(err) },
+      }));
     } finally {
       setTesting(null);
     }
@@ -131,9 +152,11 @@ export function ConnectorsPage() {
                             autoComplete="off"
                             placeholder={`Enter ${connector.name} API key`}
                             value={keys[connector.id] ?? ""}
-                            onChange={(e) =>
-                              setKeys((prev) => ({ ...prev, [connector.id]: e.target.value }))
-                            }
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setKeys((prev) => ({ ...prev, [connector.id]: value }));
+                              clearTestResult(connector.id);
+                            }}
                           />
                           <Button variant="secondary" onClick={() => void saveKey(connector.id)}>
                             {saved === connector.id ? "Saved" : "Save"}
@@ -141,7 +164,7 @@ export function ConnectorsPage() {
                           {TESTERS[connector.id] && (
                             <Button
                               variant="outline"
-                              disabled={!hasKey || testing === connector.id}
+                              disabled={!(keys[connector.id]?.trim()) || testing === connector.id}
                               onClick={() => void test(connector.id)}
                             >
                               {testing === connector.id ? "Testing…" : "Test"}

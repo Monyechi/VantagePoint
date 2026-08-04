@@ -32,11 +32,13 @@ import {
   INTENT_SIGNALS,
   MAJOR_US_CITIES,
   US_STATES,
+  COUNTRYWIDE_STATE_ID,
   budgetBandLabel,
   buyerTypeLabel,
   buildDeterministicQueries,
   companySizeLabel,
   findService,
+  isCountrywideState,
   stateLabel,
   type PresetConfig,
 } from "@/lib/taxonomy";
@@ -62,6 +64,8 @@ export function ProspectPage() {
   const [intentSignalIds, setIntentSignalIds] = useState<string[]>(
     serviceDefaults(DEFAULT_INDUSTRY.id, DEFAULT_SERVICE.id).intentSignalIds,
   );
+  const [customIntentSignals, setCustomIntentSignals] = useState<string[]>([]);
+  const [customSignalInput, setCustomSignalInput] = useState("");
   const [countryId, setCountryId] = useState("US");
   const [stateId, setStateId] = useState("");
   const [customRegion, setCustomRegion] = useState("");
@@ -120,6 +124,29 @@ export function ProspectPage() {
     );
   }
 
+  function addCustomIntentSignal() {
+    const trimmed = customSignalInput.trim();
+    if (!trimmed) return;
+    const exists = customIntentSignals.some(
+      (s) => s.toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (exists) {
+      setCustomSignalInput("");
+      return;
+    }
+    setCustomIntentSignals((prev) => [...prev, trimmed]);
+    setCustomSignalInput("");
+  }
+
+  function removeCustomIntentSignal(label: string) {
+    setCustomIntentSignals((prev) => prev.filter((s) => s !== label));
+  }
+
+  function onStateChange(nextStateId: string) {
+    setStateId(nextStateId);
+    if (isCountrywideState(nextStateId)) setCity("");
+  }
+
   function currentConfig(): PresetConfig {
     return {
       industryId,
@@ -130,6 +157,7 @@ export function ProspectPage() {
       stateId,
       customRegion,
       city,
+      customIntentSignals,
       budgetBandId,
       companySizeId,
       resultCount,
@@ -143,6 +171,7 @@ export function ProspectPage() {
     if (config.serviceId) setServiceId(config.serviceId);
     if (config.buyerTypeId) setBuyerTypeId(config.buyerTypeId);
     if (config.intentSignalIds) setIntentSignalIds(config.intentSignalIds);
+    setCustomIntentSignals(config.customIntentSignals ?? []);
     setCountryId(config.countryId ?? "US");
     setStateId(config.stateId ?? "");
     setCustomRegion(config.customRegion ?? "");
@@ -186,7 +215,11 @@ export function ProspectPage() {
   async function startSearch() {
     setError(null);
     if (country.hasStates && !stateId) {
-      setError("Pick a state, or choose Global if you don't want to filter by location.");
+      setError("Pick a state, Country-wide, or choose Global if you don't want to filter by location.");
+      return;
+    }
+    if (intentSignalIds.length === 0 && customIntentSignals.length === 0) {
+      setError("Select at least one buying signal, or add a custom one.");
       return;
     }
     setBusy(true);
@@ -198,19 +231,27 @@ export function ProspectPage() {
       const audience = `${buyerLabel}${sizeSuffix} needing ${service.label}`;
       const ticketSize = budgetBandLabel(budgetBandId);
 
-      const regionLabel = country.hasStates ? stateLabel(stateId) : customRegion;
+      const regionLabel = country.hasStates
+        ? isCountrywideState(stateId)
+          ? ""
+          : stateLabel(stateId)
+        : customRegion;
       const location =
         countryId === "GLOBAL"
           ? ""
           : [city, regionLabel, country.label].filter(Boolean).join(", ");
 
-      const queries = buildDeterministicQueries(intentSignalIds, {
-        vertical: service.label,
-        buyerType: buyerLabel,
-        city,
-        state: regionLabel,
-        country: country.label,
-      });
+      const queries = buildDeterministicQueries(
+        intentSignalIds,
+        {
+          vertical: service.label,
+          buyerType: buyerLabel,
+          city: isCountrywideState(stateId) ? "" : city,
+          state: regionLabel,
+          country: country.label,
+        },
+        customIntentSignals,
+      );
 
       const queryText = [niche, location, audience, ticketSize].filter(Boolean).join(" · ");
 
@@ -393,6 +434,41 @@ export function ProspectPage() {
                   </button>
                 );
               })}
+              {customIntentSignals.map((label) => (
+                <button
+                  key={label}
+                  type="button"
+                  title="Custom buying signal — click to remove"
+                  onClick={() => removeCustomIntentSignal(label)}
+                  className="inline-flex items-center gap-1 rounded-md border border-[var(--color-primary)] bg-[var(--color-primary)]/15 px-3 py-1.5 text-xs text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/25"
+                >
+                  {label}
+                  <span aria-hidden className="opacity-70">
+                    ×
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Input
+                value={customSignalInput}
+                onChange={(e) => setCustomSignalInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addCustomIntentSignal();
+                  }
+                }}
+                placeholder="Add a custom signal, e.g. recently rebranded"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={addCustomIntentSignal}
+                disabled={!customSignalInput.trim()}
+              >
+                Add
+              </Button>
             </div>
           </div>
 
@@ -417,11 +493,12 @@ export function ProspectPage() {
               <div className="space-y-1.5">
                 <Label>{country.hasStates ? "State" : "Region"}</Label>
                 {country.hasStates ? (
-                  <Select value={stateId} onValueChange={setStateId}>
+                  <Select value={stateId} onValueChange={onStateChange}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select a state" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={COUNTRYWIDE_STATE_ID}>Country-wide</SelectItem>
                       {US_STATES.map((s) => (
                         <SelectItem key={s.id} value={s.id}>
                           {s.label}
@@ -438,12 +515,19 @@ export function ProspectPage() {
                 )}
               </div>
               <div className="space-y-1.5 sm:col-span-2">
-                <Label>City (optional)</Label>
+                <Label className={isCountrywideState(stateId) ? "text-[var(--color-muted-foreground)]" : undefined}>
+                  City (optional)
+                </Label>
                 <Input
                   list="major-us-cities"
                   value={city}
                   onChange={(e) => setCity(e.target.value)}
-                  placeholder="Leave blank to search the whole state/region"
+                  disabled={country.hasStates && isCountrywideState(stateId)}
+                  placeholder={
+                    country.hasStates && isCountrywideState(stateId)
+                      ? "Not used for country-wide searches"
+                      : "Leave blank to search the whole state/region"
+                  }
                 />
                 <datalist id="major-us-cities">
                   {MAJOR_US_CITIES.map((c) => (

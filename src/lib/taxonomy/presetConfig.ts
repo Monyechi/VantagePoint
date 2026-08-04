@@ -7,6 +7,7 @@ export interface PresetConfig {
   stateId: string;
   customRegion: string;
   city: string;
+  customIntentSignals: string[];
   budgetBandId: string;
   companySizeId: string;
   resultCount: number;
