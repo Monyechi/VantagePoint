@@ -3,6 +3,8 @@ import type { KeyTestResult } from "@/lib/ai/testKey";
 import { searchBrave, searchTavily } from "./search";
 import { geocodeLocation, searchPlacesText } from "./places";
 import { runPageSpeed } from "./pagespeed";
+import { enrichHunter } from "./enrichment";
+import { searchReddit } from "./reddit";
 
 export async function testTavilyKey(): Promise<KeyTestResult> {
   const key = await getApiKey("tavily");
@@ -47,6 +49,28 @@ export async function testPageSpeedKey(): Promise<KeyTestResult> {
   try {
     const scores = await runPageSpeed("https://www.google.com");
     return { ok: true, message: `Key works (performance: ${scores.performance ?? "?"})` };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function testHunterKey(): Promise<KeyTestResult> {
+  const key = await getApiKey("hunter");
+  if (!key) return { ok: false, message: "No key saved" };
+  try {
+    const result = await enrichHunter("example.com", key);
+    return { ok: true, message: `Key works (${result.emails.length} email(s) found)` };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function testRedditKey(): Promise<KeyTestResult> {
+  const key = await getApiKey("reddit");
+  if (!key) return { ok: false, message: "No key saved" };
+  try {
+    const results = await searchReddit("test", 1);
+    return { ok: true, message: `Key works (${results.length} result${results.length === 1 ? "" : "s"})` };
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : String(err) };
   }

@@ -75,6 +75,7 @@ export function ProspectPage() {
   const [resultCount, setResultCount] = useState(10);
   const [extraUrls, setExtraUrls] = useState("");
   const [notes, setNotes] = useState("");
+  const [sources, setSources] = useState<string[]>(["google"]);
 
   const [presets, setPresets] = useState<SearchPreset[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState("");
@@ -116,6 +117,10 @@ export function ProspectPage() {
     setIndustryId(newIndustryId);
     const firstService = INDUSTRIES.find((i) => i.id === newIndustryId)?.services[0]?.id;
     if (firstService) applyServiceDefaults(newIndustryId, firstService);
+  }
+
+  function toggleSource(id: string) {
+    setSources((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
   }
 
   function toggleIntentSignal(id: string) {
@@ -261,7 +266,7 @@ export function ProspectPage() {
         location,
         audience,
         ticketSize,
-        sources: ["google"],
+        sources,
         extraUrls,
       });
       const job = await createJob({
@@ -274,7 +279,7 @@ export function ProspectPage() {
           location,
           audience,
           ticketSize,
-          sources: ["google"],
+          sources,
           extraUrls,
           maxResults: resultCount,
           queries,
@@ -577,10 +582,27 @@ export function ProspectPage() {
             <Label>Sources</Label>
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <Badge variant="success">Google</Badge>
+              <button
+                type="button"
+                onClick={() => toggleSource("reddit")}
+                className={`rounded-md border px-3 py-1.5 text-xs transition-colors ${
+                  sources.includes("reddit")
+                    ? "border-[var(--color-primary)] bg-[var(--color-primary)]/15 text-[var(--color-primary)]"
+                    : "border-[var(--color-border)] text-[var(--color-muted-foreground)]"
+                }`}
+              >
+                Reddit
+              </button>
               <span className="text-xs text-[var(--color-muted-foreground)]">
-                LinkedIn, Facebook, Reddit — coming soon
+                LinkedIn, Facebook — coming soon
               </span>
             </div>
+            {sources.includes("reddit") && (
+              <p className="text-xs text-[var(--color-muted-foreground)]">
+                Needs a Reddit key in Connectors — searches public posts for buyer-intent
+                language ("looking for", "need", "recommend").
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5 sm:col-span-2">

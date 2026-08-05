@@ -9,7 +9,11 @@ import {
   type OutreachMessage,
 } from "@/lib/db/queries";
 import { subscribeJobs } from "@/lib/jobs/runner";
-import { isResendConfigured, sendEmailViaResend } from "@/lib/connectors/email";
+import {
+  EMAIL_PROVIDER_LABELS,
+  isEmailSendingConfigured,
+  sendEmail,
+} from "@/lib/connectors/email";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -97,15 +101,15 @@ export function OutreachPage() {
     if (!selected) return;
     const lead = leads.find((l) => l.id === selected.lead_id);
     if (selected.channel === "email" && lead?.email) {
-      if (await isResendConfigured()) {
+      if (await isEmailSendingConfigured()) {
         try {
-          await sendEmailViaResend({
+          const provider = await sendEmail({
             to: lead.email,
             subject: selected.subject || "Hello",
             text: draftBody,
           });
           await updateOutreachStatus(selected.id, "sent", draftBody);
-          setNotice("Sent via Resend.");
+          setNotice(`Sent via ${EMAIL_PROVIDER_LABELS[provider]}.`);
         } catch (err) {
           setNotice(err instanceof Error ? err.message : String(err));
         }

@@ -8,7 +8,7 @@ export const CONNECTORS: Connector[] = [
     category: "search",
     description: "Google search results (organic, maps, shopping, images, news).",
     status: "implemented",
-    keyHint: "Enter your SerpAPI key in Settings.",
+    keyHint: "Enter your SerpAPI key in Connectors.",
   },
   {
     id: "tavily",
@@ -16,7 +16,7 @@ export const CONNECTORS: Connector[] = [
     category: "search",
     description: "Search built for AI — clean results, built-in summaries.",
     status: "implemented",
-    keyHint: "Enter your Tavily key in Settings.",
+    keyHint: "Enter your Tavily key in Connectors.",
   },
   {
     id: "brave",
@@ -24,14 +24,7 @@ export const CONNECTORS: Connector[] = [
     category: "search",
     description: "Independent search index, inexpensive, good for company sites and blogs.",
     status: "implemented",
-    keyHint: "Enter your Brave Search API key in Settings.",
-  },
-  {
-    id: "serper",
-    name: "Serper",
-    category: "search",
-    description: "Another Google Search API option.",
-    status: "planned",
+    keyHint: "Enter your Brave Search API key in Connectors.",
   },
 
   // Email
@@ -41,11 +34,10 @@ export const CONNECTORS: Connector[] = [
     category: "email",
     description: "Send outreach emails directly instead of mailto/clipboard.",
     status: "implemented",
-    keyHint: "Enter your Resend key and a verified \"from\" address in Settings.",
+    keyHint: 'Enter your Resend key and a verified "from" address in Connectors.',
+    testCaveat:
+      'Resend\'s recommended "sending only" keys can\'t be validated without sending a real email — checked on first send.',
   },
-  { id: "postmark", name: "Postmark", category: "email", description: "Transactional email with strong deliverability.", status: "planned" },
-  { id: "sendgrid", name: "SendGrid", category: "email", description: "Industry-standard email sending.", status: "planned" },
-  { id: "mailgun", name: "Mailgun", category: "email", description: "Transactional email API.", status: "planned" },
 
   // Calendar
   { id: "google_calendar", name: "Google Calendar", category: "calendar", description: "Book meetings automatically.", status: "planned" },
@@ -57,10 +49,6 @@ export const CONNECTORS: Connector[] = [
   { id: "pipedrive", name: "Pipedrive", category: "crm", description: "Sync leads to an external CRM.", status: "planned" },
   { id: "zoho", name: "Zoho CRM", category: "crm", description: "Sync leads to an external CRM.", status: "planned" },
 
-  // Contacts
-  { id: "google_contacts", name: "Google Contacts", category: "contacts", description: "Sync contacts.", status: "planned" },
-  { id: "microsoft_contacts", name: "Microsoft Contacts", category: "contacts", description: "Sync contacts.", status: "planned" },
-
   // Maps
   {
     id: "google_places",
@@ -70,15 +58,52 @@ export const CONNECTORS: Connector[] = [
     status: "implemented",
     keyHint: 'Enter a Google Maps Platform key in Connectors (needs "Places API (New)" and "Geocoding API" enabled).',
   },
-  { id: "mapbox", name: "Mapbox", category: "maps", description: "Geocoding and maps.", status: "planned" },
-  { id: "openstreetmap", name: "OpenStreetMap", category: "maps", description: "Free geocoding.", status: "planned" },
+  {
+    id: "openstreetmap",
+    name: "OpenStreetMap",
+    category: "maps",
+    description: "Free geocoding fallback for Local Business Hunter when no Google key is set — used automatically, no key needed.",
+    status: "implemented",
+    requiresKey: false,
+  },
 
   // Company intelligence
-  { id: "clearbit", name: "Clearbit", category: "company_intel", description: "Company data — revenue, employees, technologies.", status: "planned" },
-  { id: "apollo", name: "Apollo", category: "company_intel", description: "Lead database — decision makers, emails, phone numbers.", status: "planned" },
-  { id: "people_data_labs", name: "People Data Labs", category: "company_intel", description: "Large-scale person/company data.", status: "planned" },
-  { id: "hunter", name: "Hunter.io", category: "company_intel", description: "Find company emails.", status: "planned" },
-  { id: "snov", name: "Snov.io", category: "company_intel", description: "Email finder and outreach.", status: "planned" },
+  {
+    id: "apollo",
+    name: "Apollo",
+    category: "company_intel",
+    description: "Company lookup by domain — decision makers, phone numbers, founded year.",
+    status: "implemented",
+    keyHint: "Enter your Apollo API key in Connectors.",
+    testCaveat: "Apollo bills per API call, so there's no Test button here to avoid spending a credit just to check the key.",
+  },
+  {
+    id: "people_data_labs",
+    name: "People Data Labs",
+    category: "company_intel",
+    description: "Large-scale company enrichment by domain.",
+    status: "implemented",
+    keyHint: "Enter your People Data Labs API key in Connectors.",
+    testCaveat: "PDL bills per enrichment call, so there's no Test button here to avoid spending a credit just to check the key.",
+  },
+  {
+    id: "hunter",
+    name: "Hunter.io",
+    category: "company_intel",
+    description: "Find company emails by domain.",
+    status: "implemented",
+    keyHint: "Enter your Hunter.io API key in Connectors.",
+  },
+  {
+    id: "snov",
+    name: "Snov.io",
+    category: "company_intel",
+    description: "Email finder by domain.",
+    status: "implemented",
+    keyHint:
+      'Enter as "client_id:client_secret" (from your Snov.io API settings) in Connectors — Snov uses OAuth, not a single key.',
+    testCaveat: "Snov's domain search spends a credit and takes several seconds to complete, so there's no Test button.",
+  },
 
   // Website tech / SEO
   {
@@ -89,48 +114,41 @@ export const CONNECTORS: Connector[] = [
     status: "implemented",
     keyHint: 'Enter a Google Cloud API key with "PageSpeed Insights API" enabled in Connectors — can be the same key as Google Places.',
   },
-  { id: "builtwith", name: "BuiltWith", category: "website_analysis", description: "Detect a site's tech stack.", status: "planned" },
-  {
-    id: "wappalyzer",
-    name: "Wappalyzer",
-    category: "website_analysis",
-    description: "Paid tech-stack detection API. ClientPilot ships a free built-in signature detector (WordPress/Wix/Squarespace/Shopify/Weebly/Webflow/GoDaddy) that covers the common cases without a subscription.",
-    status: "planned",
-  },
 
   // Domain
-  { id: "whois", name: "WHOIS / DNS", category: "domain", description: "Domain age, registrar, expiration.", status: "planned" },
+  {
+    id: "whois",
+    name: "WHOIS / DNS (RDAP)",
+    category: "domain",
+    description: "Domain registration age, registrar, and expiration — no key needed, used from the Leads Enrich action.",
+    status: "implemented",
+    requiresKey: false,
+  },
 
   // Social
-  { id: "x_twitter", name: "X (Twitter)", category: "social", description: "Public post monitoring.", status: "planned" },
-  { id: "reddit", name: "Reddit", category: "social", description: "Find posts from people asking for exactly the help you sell.", status: "planned" },
-  { id: "youtube", name: "YouTube", category: "social", description: "Find creators and potential partnerships.", status: "planned" },
-  { id: "facebook", name: "Facebook", category: "social", description: "Public page/group content where permitted.", status: "planned" },
-  { id: "instagram", name: "Instagram", category: "social", description: "Public content, limited API access.", status: "planned" },
-  { id: "tiktok", name: "TikTok", category: "social", description: "Public content, limited API access.", status: "planned" },
-
-  // Automation
-  { id: "n8n", name: "n8n", category: "automation", description: "Custom workflow automation.", status: "planned" },
-  { id: "mcp", name: "MCP (Model Context Protocol)", category: "automation", description: "Standardized tool-calling for the AI.", status: "planned" },
+  {
+    id: "reddit",
+    name: "Reddit",
+    category: "social",
+    description: "Search public posts for buyer-intent language — a real, selectable source in Prospect Search.",
+    status: "implemented",
+    keyHint:
+      'Register a "script" app at reddit.com/prefs/apps, then enter as "client_id:client_secret" in Connectors.',
+  },
 
   // Notifications
   { id: "discord", name: "Discord", category: "notifications", description: "Job/lead notifications.", status: "planned" },
   { id: "slack", name: "Slack", category: "notifications", description: "Job/lead notifications.", status: "planned" },
-  { id: "telegram", name: "Telegram", category: "notifications", description: "Job/lead notifications.", status: "planned" },
-  { id: "pushbullet", name: "Pushbullet", category: "notifications", description: "Push notifications.", status: "planned" },
 
   // Documents
-  { id: "pdf_generation", name: "PDF Generation", category: "documents", description: "Proposals, contracts, invoices.", status: "planned" },
-
-  // Payments
-  { id: "stripe", name: "Stripe", category: "payments", description: "Take payment if you commercialize the platform.", status: "planned" },
-  { id: "paddle", name: "Paddle", category: "payments", description: "Take payment if you commercialize the platform.", status: "planned" },
-  { id: "lemon_squeezy", name: "Lemon Squeezy", category: "payments", description: "Take payment if you commercialize the platform.", status: "planned" },
-
-  // Browser automation
-  { id: "playwright", name: "Playwright", category: "browser_automation", description: "Open pages, log in, fill forms, download reports.", status: "planned" },
-  { id: "browser_use", name: "Browser-use", category: "browser_automation", description: "AI-driven browser automation.", status: "planned" },
-  { id: "stagehand", name: "Stagehand", category: "browser_automation", description: "AI-driven browser automation.", status: "planned" },
+  {
+    id: "pdf_generation",
+    name: "PDF Generation",
+    category: "documents",
+    description: "One-page proposal PDFs generated from a lead + your Seller Profile — client-side, no external API, no key needed.",
+    status: "implemented",
+    requiresKey: false,
+  },
 ];
 
 export function connectorsByCategory(): { category: Connector["category"]; connectors: Connector[] }[] {
@@ -139,17 +157,13 @@ export function connectorsByCategory(): { category: Connector["category"]; conne
     "email",
     "calendar",
     "crm",
-    "contacts",
     "maps",
     "company_intel",
     "website_analysis",
     "domain",
     "social",
-    "automation",
     "notifications",
     "documents",
-    "payments",
-    "browser_automation",
   ];
   return order.map((category) => ({
     category,

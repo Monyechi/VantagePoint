@@ -3,6 +3,7 @@ import {
   createJob,
   deleteLead,
   listLeads,
+  updateLeadEmail,
   updateLeadNotes,
   updateLeadPlaceFields,
   updateLeadStatus,
@@ -10,6 +11,10 @@ import {
 } from "@/lib/db/queries";
 import { subscribeJobs } from "@/lib/jobs/runner";
 import { getPlaceDetails } from "@/lib/connectors/places";
+import { enrichDomain } from "@/lib/connectors/enrichment";
+import { domainAgeYears, lookupDomain } from "@/lib/connectors/domain";
+import { downloadPdf, generateProposalPdf } from "@/lib/pdf/proposal";
+import { getSellerProfile } from "@/lib/settings/sellerProfile";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +41,8 @@ export function LeadsPage() {
   const [notesDraft, setNotesDraft] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [refreshingPlace, setRefreshingPlace] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   const selectedRef = useRef<Lead | null>(null);
   useEffect(() => {
@@ -100,6 +107,80 @@ export function LeadsPage() {
     if (!selected) return;
     await createJob({ type: "draft_outreach", payload: { leadId: selected.id, channel } });
     setNotice(`Draft ${channel} queued — check Tasks, then Outreach to approve.`);
+  }
+
+  async function generateProposal() {
+    if (!selected) return;
+    setGeneratingPdf(true);
+    try {
+      const profile = await getSellerProfile();
+      const bytes = await generateProposalPdf(selected, profile);
+      const safeName = (selected.business || "proposal").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+      downloadPdf(bytes, `${safeName}-proposal.pdf`);
+      setNotice("Proposal PDF downloaded.");
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err));
+    } finally {
+      setGeneratingPdf(false);
+    }
+  }
+
+  function websiteDomain(website: string): string {
+    try {
+      const host = new URL(website.startsWith("http") ? website : `https://${website}`).hostname;
+      return host.startsWith("www.") ? host.slice(4) : host;
+    } catch {
+      return website;
+    }
+  }
+
+  async function enrichLead() {
+    if (!selected?.website) {
+      setNotice("This lead has no website to enrich from.");
+      return;
+    }
+    setEnriching(true);
+    const domain = websiteDomain(selected.website);
+    const findings: string[] = [];
+    let newEmail: string | undefined;
+
+    try {
+      const enrichment = await enrichDomain(domain);
+      if (enrichment.emails.length > 0) {
+        findings.push(`Found email(s) via ${enrichment.provider}: ${enrichment.emails.join(", ")}`);
+        if (!selected.email) newEmail = enrichment.emails[0];
+      }
+      if (enrichment.companyName) findings.push(`Company: ${enrichment.companyName}`);
+      if (enrichment.companySummary) findings.push(enrichment.companySummary);
+    } catch (err) {
+      findings.push(
+        `Company enrichment: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    try {
+      const info = await lookupDomain(domain);
+      const age = domainAgeYears(info);
+      if (age !== null) {
+        findings.push(
+          `Domain registered ~${age} year${age === 1 ? "" : "s"} ago${info.registrar ? ` via ${info.registrar}` : ""}.`,
+        );
+      }
+    } catch (err) {
+      findings.push(`Domain lookup: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    try {
+      const stamp = new Date().toLocaleString();
+      const appended = [notesDraft, `[Enriched ${stamp}]`, ...findings].filter(Boolean).join("\n");
+      await updateLeadNotes(selected.id, appended);
+      if (newEmail) await updateLeadEmail(selected.id, newEmail);
+      setNotesDraft(appended);
+      setNotice("Enrichment complete — see notes.");
+      await refresh();
+    } finally {
+      setEnriching(false);
+    }
   }
 
   async function refreshFromGoogle() {
@@ -320,9 +401,19 @@ export function LeadsPage() {
                 onChange={(e) => setNotesDraft(e.target.value)}
                 placeholder="Private notes about this lead"
               />
-              <Button size="sm" variant="secondary" onClick={() => void saveNotes()}>
-                Save notes
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="secondary" onClick={() => void saveNotes()}>
+                  Save notes
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={enriching || !selected.website}
+                  onClick={() => void enrichLead()}
+                >
+                  {enriching ? "Enriching…" : "Enrich"}
+                </Button>
+              </div>
             </div>
 
             <div className="space-y-1.5">
@@ -338,6 +429,18 @@ export function LeadsPage() {
                   Facebook
                 </Button>
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Documents</Label>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={generatingPdf}
+                onClick={() => void generateProposal()}
+              >
+                {generatingPdf ? "Generating…" : "Generate Proposal PDF"}
+              </Button>
             </div>
 
             {notice && <p className="text-xs text-[var(--color-primary)]">{notice}</p>}

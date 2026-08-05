@@ -97,11 +97,16 @@ export async function searchWeb(query: string, maxResults: number): Promise<WebS
   for (const providerId of SEARCH_PROVIDER_PRIORITY) {
     const key = await getApiKey(providerId);
     if (!key) continue;
-    if (providerId === "serp") return searchSerpApi(query, maxResults, key);
-    if (providerId === "tavily") return searchTavily(query, maxResults, key);
-    return searchBrave(query, maxResults, key);
+    switch (providerId) {
+      case "serp":
+        return searchSerpApi(query, maxResults, key);
+      case "tavily":
+        return searchTavily(query, maxResults, key);
+      case "brave":
+        return searchBrave(query, maxResults, key);
+    }
   }
   throw new Error(
-    "No search connector configured. Add a SerpAPI, Tavily, or Brave Search key in Settings, or paste website URLs in Extra URLs.",
+    "No search connector configured. Add a SerpAPI, Tavily, or Brave Search key in Connectors, or paste website URLs in Extra URLs.",
   );
 }

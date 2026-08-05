@@ -10,6 +10,8 @@
     "sql:allow-select",
     "sql:allow-load",
     "sql:allow-close",
+    "updater:default",
+    "process:default",
     {
       "identifier": "http:default",
       "allow": [

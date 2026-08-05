@@ -28,10 +28,18 @@ fn set_api_key(provider: String, secret: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_http::init())
-        .invoke_handler(tauri::generate_handler![get_api_key, set_api_key])
+        .invoke_handler(tauri::generate_handler![get_api_key, set_api_key]);
+
+    // In-app updates aren't a desktop concept on mobile (app stores handle that instead).
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
+
+    builder
         .run(tauri::generate_context!())
         .expect("error while running ClientPilot");
 }

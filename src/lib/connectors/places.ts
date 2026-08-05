@@ -24,11 +24,10 @@ async function requireGoogleKey(): Promise<string> {
   return key;
 }
 
-/** Geocodes free-text (e.g. "Dallas, TX") into a lat/lng center point. */
-export async function geocodeLocation(
+async function geocodeGoogle(
   location: string,
+  key: string,
 ): Promise<{ lat: number; lng: number }> {
-  const key = await requireGoogleKey();
   const params = new URLSearchParams({ address: location, key });
   const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params.toString()}`, {
     method: "GET",
@@ -46,6 +45,49 @@ export async function geocodeLocation(
     throw new Error(`Could not find "${location}" (${data.status}).`);
   }
   return { lat: point.lat, lng: point.lng };
+}
+
+export async function geocodeNominatim(location: string): Promise<{ lat: number; lng: number }> {
+  const params = new URLSearchParams({ q: location, format: "jsonv2", limit: "1" });
+  const res = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+    method: "GET",
+    headers: {
+      "User-Agent": "ClientPilot/0.1 (contact: local desktop app; +https://clientpilot.local)",
+    },
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`OpenStreetMap error ${res.status}: ${t.slice(0, 300)}`);
+  }
+  const data = (await res.json()) as { lat?: string; lon?: string }[];
+  const first = data[0];
+  if (!first?.lat || !first?.lon) {
+    throw new Error(`Could not find "${location}" via OpenStreetMap.`);
+  }
+  return { lat: Number(first.lat), lng: Number(first.lon) };
+}
+
+/** Geocodes free-text (e.g. "Dallas, TX") into a lat/lng center point. Tries Google, then
+ * falls back to free OpenStreetMap/Nominatim (no key required) — so geocoding works even
+ * without a Google Places key, though the Places business-search below still does. */
+export async function geocodeLocation(location: string): Promise<{ lat: number; lng: number }> {
+  const googleKey = await getApiKey("google_places");
+  if (googleKey) {
+    try {
+      return await geocodeGoogle(location, googleKey);
+    } catch {
+      // fall through to the next provider
+    }
+  }
+
+  try {
+    return await geocodeNominatim(location);
+  } catch (err) {
+    throw new Error(
+      `Could not geocode "${location}". ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
 }
 
 /** Text-searches Google Places, biased to a circle around the geocoded location. */

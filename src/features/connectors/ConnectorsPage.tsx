@@ -3,10 +3,12 @@ import { testSerpApiKey, type KeyTestResult } from "@/lib/ai/testKey";
 import {
   testBraveKey,
   testGooglePlacesKey,
+  testHunterKey,
   testPageSpeedKey,
+  testRedditKey,
   testTavilyKey,
 } from "@/lib/connectors/testConnector";
-import { getResendFromAddress, setResendFromAddress } from "@/lib/connectors/email";
+import { getFromAddress, setFromAddress } from "@/lib/connectors/email";
 import { CONNECTOR_CATEGORY_LABELS } from "@/lib/connectors/types";
 import { connectorsByCategory } from "@/lib/connectors/registry";
 import { getApiKey, setApiKey } from "@/lib/db/queries";
@@ -22,7 +24,14 @@ const KEYED_CONNECTOR_IDS = [
   "resend",
   "google_places",
   "google_pagespeed",
+  "hunter",
+  "apollo",
+  "people_data_labs",
+  "snov",
+  "reddit",
 ];
+
+const EMAIL_PROVIDER_IDS = new Set(["resend"]);
 
 const TESTERS: Record<string, () => Promise<KeyTestResult>> = {
   serp: testSerpApiKey,
@@ -30,12 +39,14 @@ const TESTERS: Record<string, () => Promise<KeyTestResult>> = {
   brave: testBraveKey,
   google_places: testGooglePlacesKey,
   google_pagespeed: testPageSpeedKey,
+  hunter: testHunterKey,
+  reddit: testRedditKey,
 };
 
 export function ConnectorsPage() {
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [savedKeys, setSavedKeys] = useState<Record<string, boolean>>({});
-  const [resendFrom, setResendFromState] = useState("");
+  const [fromAddresses, setFromAddresses] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, KeyTestResult>>({});
@@ -53,7 +64,12 @@ export function ConnectorsPage() {
       }
       setKeys(nextKeys);
       setSavedKeys(nextSaved);
-      setResendFromState(await getResendFromAddress());
+
+      const nextFrom: Record<string, string> = {};
+      for (const id of EMAIL_PROVIDER_IDS) {
+        nextFrom[id] = await getFromAddress(id);
+      }
+      setFromAddresses(nextFrom);
     })();
   }, []);
 
@@ -75,9 +91,9 @@ export function ConnectorsPage() {
     setTimeout(() => setSaved(null), 1500);
   }
 
-  async function saveResendFrom() {
-    await setResendFromAddress(resendFrom.trim());
-    setSaved("resend-from");
+  async function saveFromAddress(providerId: string) {
+    await setFromAddress(providerId, fromAddresses[providerId] ?? "");
+    setSaved(`${providerId}-from`);
     setTimeout(() => setSaved(null), 1500);
   }
 
@@ -126,7 +142,9 @@ export function ConnectorsPage() {
             <CardContent className="space-y-4">
               {connectors.map((connector) => {
                 const isImplemented = connector.status === "implemented";
+                const needsKey = isImplemented && connector.requiresKey !== false;
                 const hasKey = savedKeys[connector.id];
+                const isEmailProvider = EMAIL_PROVIDER_IDS.has(connector.id);
                 return (
                   <div
                     key={connector.id}
@@ -139,18 +157,38 @@ export function ConnectorsPage() {
                           {connector.description}
                         </div>
                       </div>
-                      <Badge variant={isImplemented ? (hasKey ? "success" : "warning") : "muted"}>
-                        {isImplemented ? (hasKey ? "Connected" : "Needs key") : "Coming soon"}
+                      <Badge
+                        variant={
+                          !isImplemented ? "muted" : needsKey && !hasKey ? "warning" : "success"
+                        }
+                      >
+                        {!isImplemented
+                          ? "Coming soon"
+                          : needsKey
+                            ? hasKey
+                              ? "Connected"
+                              : "Needs key"
+                            : "Active"}
                       </Badge>
                     </div>
 
-                    {isImplemented && (
+                    {isImplemented && !needsKey && (
+                      <p className="text-xs text-[var(--color-muted-foreground)]">
+                        No key needed — works automatically.
+                      </p>
+                    )}
+
+                    {needsKey && (
                       <>
                         <div className="flex gap-2">
                           <Input
                             type="password"
                             autoComplete="off"
-                            placeholder={`Enter ${connector.name} API key`}
+                            placeholder={
+                              connector.id === "reddit" || connector.id === "snov"
+                                ? "client_id:client_secret"
+                                : `Enter ${connector.name} API key`
+                            }
                             value={keys[connector.id] ?? ""}
                             onChange={(e) => {
                               const value = e.target.value;
@@ -164,7 +202,7 @@ export function ConnectorsPage() {
                           {TESTERS[connector.id] && (
                             <Button
                               variant="outline"
-                              disabled={!(keys[connector.id]?.trim()) || testing === connector.id}
+                              disabled={!keys[connector.id]?.trim() || testing === connector.id}
                               onClick={() => void test(connector.id)}
                             >
                               {testing === connector.id ? "Testing…" : "Test"}
@@ -172,24 +210,31 @@ export function ConnectorsPage() {
                           )}
                         </div>
 
-                        {connector.id === "resend" && (
-                          <>
-                            <div className="flex gap-2 pt-1">
-                              <Input
-                                placeholder='"From" address, e.g. you@yourdomain.com'
-                                value={resendFrom}
-                                onChange={(e) => setResendFromState(e.target.value)}
-                              />
-                              <Button variant="secondary" onClick={() => void saveResendFrom()}>
-                                {saved === "resend-from" ? "Saved" : "Save"}
-                              </Button>
-                            </div>
-                            <p className="text-xs text-[var(--color-muted-foreground)]">
-                              Resend's recommended "sending only" keys can't be validated without
-                              sending a real email, so there's no Test button here — it's checked
-                              on first send.
-                            </p>
-                          </>
+                        {isEmailProvider && (
+                          <div className="flex gap-2 pt-1">
+                            <Input
+                              placeholder='"From" address, e.g. you@yourdomain.com'
+                              value={fromAddresses[connector.id] ?? ""}
+                              onChange={(e) =>
+                                setFromAddresses((prev) => ({
+                                  ...prev,
+                                  [connector.id]: e.target.value,
+                                }))
+                              }
+                            />
+                            <Button
+                              variant="secondary"
+                              onClick={() => void saveFromAddress(connector.id)}
+                            >
+                              {saved === `${connector.id}-from` ? "Saved" : "Save"}
+                            </Button>
+                          </div>
+                        )}
+
+                        {connector.testCaveat && (
+                          <p className="text-xs text-[var(--color-muted-foreground)]">
+                            {connector.testCaveat}
+                          </p>
                         )}
 
                         {testResults[connector.id] && (

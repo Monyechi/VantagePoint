@@ -1,6 +1,7 @@
 import { completeWithRouting } from "@/lib/ai/complete";
 import { getSellerProfile, sellerProfileBrief } from "@/lib/settings/sellerProfile";
 import { searchWeb } from "@/lib/connectors/search";
+import { searchReddit } from "@/lib/connectors/reddit";
 import {
   appendJobEvent,
   getJob,
@@ -123,10 +124,49 @@ export async function runProspectSearchJob(job: JobRow): Promise<void> {
       await log(`Added ${added} URL(s) from Extra URLs`);
     }
 
-    if (payload.sources.includes("google")) {
+    async function runSourceSearch(
+      sourceLabel: string,
+      queries: string[],
+      searchFn: (query: string, n: number) => Promise<{ title: string; link: string; snippet: string }[]>,
+    ): Promise<void> {
       const remainingSlots = maxResults - urls.length;
-      if (remainingSlots <= 0) {
-        await log("Extra URLs already cover the requested result count; skipping Google search.");
+      if (remainingSlots <= 0) return;
+      try {
+        const perQueryTarget = Math.min(
+          20,
+          Math.max(5, Math.ceil((remainingSlots * 1.5) / Math.max(queries.length, 1))),
+        );
+        const resultSets: { title: string; link: string; snippet: string }[][] = [];
+        for (const q of queries) {
+          const results = await searchFn(q, perQueryTarget);
+          await log(`Found ${results.length} ${sourceLabel} result(s) for query`);
+          resultSets.push(results);
+        }
+        // Round-robin across queries so no single query crowds out the rest.
+        let addedFromSearch = 0;
+        const maxRounds = Math.max(0, ...resultSets.map((r) => r.length));
+        for (let round = 0; round < maxRounds && urls.length < maxResults; round++) {
+          for (const set of resultSets) {
+            if (urls.length >= maxResults) break;
+            const item = set[round];
+            if (!item) continue;
+            if (addUrl(item)) addedFromSearch += 1;
+          }
+        }
+        await log(`Added ${addedFromSearch} unique result(s) from ${sourceLabel}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (urls.length === 0) throw err;
+        await log(`${sourceLabel} search skipped: ${msg}`, "warn");
+      }
+    }
+
+    const wantsGoogle = payload.sources.includes("google");
+    const wantsReddit = payload.sources.includes("reddit");
+
+    if (wantsGoogle || wantsReddit) {
+      if (maxResults - urls.length <= 0) {
+        await log("Extra URLs already cover the requested result count; skipping search.");
       } else {
         const deterministicQueries = (payload.queries ?? []).filter(Boolean);
         let queries: string[];
@@ -134,45 +174,19 @@ export async function runProspectSearchJob(job: JobRow): Promise<void> {
           await log("Using deterministic buyer-intent queries from your selections...");
           queries = deterministicQueries;
         } else {
-          await log("Planning buyer-intent Google queries (not competitor search)...");
+          await log("Planning buyer-intent queries (not competitor search)...");
           queries = await buildBuyerSearchQueries(payload, job.id);
         }
         for (const q of queries) {
           await log(`Search: ${q}`);
         }
-        try {
-          const perQueryTarget = Math.min(
-            20,
-            Math.max(5, Math.ceil((remainingSlots * 1.5) / Math.max(queries.length, 1))),
-          );
-          const resultSets: { title: string; link: string; snippet: string }[][] = [];
-          for (const q of queries) {
-            const results = await searchWeb(q, perQueryTarget);
-            await log(`Found ${results.length} results for query`);
-            resultSets.push(results);
-          }
-          // Round-robin across queries so no single query crowds out the rest.
-          let addedFromSearch = 0;
-          const maxRounds = Math.max(0, ...resultSets.map((r) => r.length));
-          for (let round = 0; round < maxRounds && urls.length < maxResults; round++) {
-            for (const set of resultSets) {
-              if (urls.length >= maxResults) break;
-              const item = set[round];
-              if (!item) continue;
-              if (addUrl(item)) addedFromSearch += 1;
-            }
-          }
-          await log(`Added ${addedFromSearch} unique result(s) from Google search`);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (urls.length === 0) throw err;
-          await log(`Google search skipped: ${msg}`, "warn");
-        }
+        if (wantsGoogle) await runSourceSearch("Google", queries, searchWeb);
+        if (wantsReddit) await runSourceSearch("Reddit", queries, searchReddit);
       }
     }
 
     const comingSoon = payload.sources.filter((s) =>
-      ["linkedin", "facebook", "reddit", "podcasts", "blogs"].includes(s),
+      ["linkedin", "facebook", "podcasts", "blogs"].includes(s),
     );
     if (comingSoon.length) {
       await log(
@@ -183,7 +197,7 @@ export async function runProspectSearchJob(job: JobRow): Promise<void> {
 
     if (urls.length === 0) {
       throw new Error(
-        "No URLs to process. Add a SerpAPI key for Google search, or paste website URLs.",
+        "No URLs to process. Add a search connector (Google/Reddit) in Connectors, or paste website URLs.",
       );
     }
 

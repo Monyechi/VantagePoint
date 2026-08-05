@@ -1,0 +1,49 @@
+name: Release
+
+# Runs only on version tags (e.g. v0.1.1) pushed to the repo — not on every commit to main.
+# Publishes a draft GitHub Release so nothing goes live to users until you review and
+# publish it yourself from the GitHub UI.
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows-first, matching the primary dev/target platform. Add macOS/Linux
+          # entries here once code signing is sorted for those platforms.
+          - platform: windows-latest
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "ClientPilot ${{ github.ref_name }}"
+          releaseBody: "See assets below to download this version."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

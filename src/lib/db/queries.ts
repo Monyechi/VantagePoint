@@ -470,6 +470,15 @@ export async function updateLeadNotes(id: string, notes: string): Promise<void> 
   ]);
 }
 
+export async function updateLeadEmail(id: string, email: string): Promise<void> {
+  const db = await getDb();
+  await db.execute(`UPDATE leads SET email = $1, updated_at = $2 WHERE id = $3`, [
+    email,
+    nowIso(),
+    id,
+  ]);
+}
+
 export async function deleteLead(id: string): Promise<void> {
   const db = await getDb();
   await db.execute(`DELETE FROM outreach_messages WHERE lead_id = $1`, [id]);
