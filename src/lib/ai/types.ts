@@ -4,7 +4,13 @@ export type ProviderId =
   | "openai"
   | "gemini"
   | "kimi"
-  | "grok";
+  | "grok"
+  | "mistral"
+  | "groq"
+  | "together"
+  | "openrouter"
+  | "perplexity"
+  | "cohere";
 
 export type TaskKind =
   | "website_analysis"
@@ -131,6 +137,92 @@ export const PROVIDERS: ProviderDefinition[] = [
     models: [
       { id: "grok-3-mini", label: "Grok 3 Mini", inputPerM: 0.3, outputPerM: 0.5 },
       { id: "grok-3", label: "Grok 3", inputPerM: 3.0, outputPerM: 15.0 },
+    ],
+  },
+  {
+    id: "mistral",
+    name: "Mistral",
+    baseUrl: "https://api.mistral.ai/v1",
+    apiStyle: "openai",
+    implemented: true,
+    models: [
+      { id: "mistral-small-3", label: "Mistral Small 3", inputPerM: 0.2, outputPerM: 0.6 },
+      { id: "mistral-large-3", label: "Mistral Large 3", inputPerM: 2.0, outputPerM: 6.0 },
+    ],
+  },
+  {
+    id: "groq",
+    name: "Groq",
+    baseUrl: "https://api.groq.com/openai/v1",
+    apiStyle: "openai",
+    implemented: true,
+    models: [
+      { id: "llama-3.1-8b-instant", label: "Llama 3.1 8B Instant", inputPerM: 0.05, outputPerM: 0.08 },
+      { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B Versatile", inputPerM: 0.59, outputPerM: 0.79 },
+    ],
+  },
+  {
+    id: "together",
+    name: "Together AI",
+    baseUrl: "https://api.together.xyz/v1",
+    apiStyle: "openai",
+    implemented: true,
+    models: [
+      {
+        id: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        label: "Llama 3.3 70B Turbo",
+        inputPerM: 0.88,
+        outputPerM: 0.88,
+      },
+      {
+        id: "Qwen/Qwen2.5-72B-Instruct-Turbo",
+        label: "Qwen 2.5 72B Turbo",
+        inputPerM: 1.2,
+        outputPerM: 1.2,
+      },
+    ],
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    apiStyle: "openai",
+    implemented: true,
+    models: [
+      // OpenRouter is a multi-provider aggregator — one key reaches models from every
+      // provider it lists. "auto" is its own meta-router that picks a model per request;
+      // pricing for it is necessarily approximate since the actual model varies.
+      { id: "openrouter/auto", label: "Auto (best available)", inputPerM: 1.0, outputPerM: 3.0 },
+      {
+        id: "meta-llama/llama-3.1-8b-instruct:free",
+        label: "Llama 3.1 8B (free tier)",
+        inputPerM: 0,
+        outputPerM: 0,
+      },
+    ],
+  },
+  {
+    id: "perplexity",
+    name: "Perplexity",
+    baseUrl: "https://api.perplexity.ai",
+    apiStyle: "openai",
+    implemented: true,
+    models: [
+      { id: "sonar", label: "Sonar", inputPerM: 1.0, outputPerM: 1.0 },
+      { id: "sonar-pro", label: "Sonar Pro", inputPerM: 3.0, outputPerM: 15.0 },
+    ],
+  },
+  {
+    id: "cohere",
+    name: "Cohere",
+    // Cohere's OpenAI-compatibility endpoint — lets it reuse the same request path as
+    // every other "openai" apiStyle provider here instead of a bespoke Cohere client.
+    baseUrl: "https://api.cohere.ai/compatibility/v1",
+    apiStyle: "openai",
+    implemented: true,
+    models: [
+      { id: "command-r7b", label: "Command R7B", inputPerM: 0.0375, outputPerM: 0.15 },
+      { id: "command-r-plus", label: "Command R+", inputPerM: 2.5, outputPerM: 10.0 },
     ],
   },
 ];

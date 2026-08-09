@@ -57,6 +57,16 @@ interface PendingConfirm {
   match: LedgerMatch;
 }
 
+const SIDEBAR_COLLAPSED_KEY = "clientpilot.chat.sidebarCollapsed";
+
+function readSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function ChatPage() {
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
@@ -66,8 +76,21 @@ export function ChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const [chatDefaults, setChatDefaultsState] = useState<ChatDefaults>({});
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
   const navigate = useNavigate();
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  function toggleSidebarCollapsed() {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        /* ignore quota / private mode */
+      }
+      return next;
+    });
+  }
 
   const examplePrompts = useMemo(() => buildExamplePrompts(chatDefaults), [chatDefaults]);
 
@@ -203,13 +226,15 @@ export function ChatPage() {
       <ChatThreadList
         threads={threads}
         activeThreadId={activeThreadId}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={toggleSidebarCollapsed}
         onSelect={(id) => void selectThread(id)}
         onNewChat={resetToEmptyThread}
         onDelete={(id) => void handleDeleteThread(id)}
         onClearAll={() => void handleClearAll()}
       />
 
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="border-b border-[var(--color-border)] px-8 py-5">
           <h1 className="font-[var(--font-display)] text-2xl font-semibold tracking-tight">Chat</h1>
           <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">
@@ -220,7 +245,13 @@ export function ChatPage() {
         <ChatDefaultsBar defaults={chatDefaults} onChange={(next) => void handleDefaultsChange(next)} />
 
         <div className="min-h-0 flex-1 overflow-auto px-8 py-6">
-          <div className="mx-auto max-w-3xl space-y-4">
+          <div
+            className={
+              sidebarCollapsed
+                ? "mx-auto w-full max-w-5xl space-y-4"
+                : "mx-auto max-w-3xl space-y-4"
+            }
+          >
             {!loaded ? (
               <p className="text-sm text-[var(--color-muted-foreground)]">Loading…</p>
             ) : messages.length === 0 ? (
@@ -268,7 +299,13 @@ export function ChatPage() {
         </div>
 
         <div className="border-t border-[var(--color-border)] px-8 py-4">
-          <div className="mx-auto max-w-3xl space-y-2">
+          <div
+            className={
+              sidebarCollapsed
+                ? "mx-auto w-full max-w-5xl space-y-2"
+                : "mx-auto max-w-3xl space-y-2"
+            }
+          >
             {error && <p className="text-sm text-[var(--color-destructive)]">{error}</p>}
             <ChatComposer onSend={(text) => void handleSend(text)} disabled={thinking} />
           </div>

@@ -60,7 +60,7 @@ export function AppShell() {
           Desktop MVP · Local SQLite
         </div>
       </aside>
-      <main className="min-w-0 flex-1 overflow-auto">
+      <main className="min-h-0 min-w-0 flex-1 overflow-auto">
         <Outlet />
       </main>
       <ConfirmDialogHost />

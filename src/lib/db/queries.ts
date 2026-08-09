@@ -4,7 +4,21 @@ import type { ModelRouting, ProviderId, TaskKind } from "@/lib/ai/types";
 import { notifyJobs } from "@/lib/jobs/events";
 import { getDb, nowIso } from "./client";
 
-const KEY_PROVIDERS = ["deepseek", "claude", "openai", "gemini", "kimi", "grok", "serp"];
+const KEY_PROVIDERS = [
+  "deepseek",
+  "claude",
+  "openai",
+  "gemini",
+  "kimi",
+  "grok",
+  "mistral",
+  "groq",
+  "together",
+  "openrouter",
+  "perplexity",
+  "cohere",
+  "serp",
+];
 
 export type JobState =
   | "queued"
