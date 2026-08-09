@@ -51,11 +51,12 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-      - name: Rename macOS artifact to add OS label
+      - name: Rename artifacts to add OS label
         if: matrix.platform == 'macos-latest'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Rename macOS .dmg
           DMG_FILE=$(find . -name "VantagePoint_*.dmg" -type f | head -1)
           if [ -n "$DMG_FILE" ]; then
             NEW_NAME="$(basename "$DMG_FILE") (macOS)"
@@ -63,6 +64,29 @@ jobs:
             mv "$DMG_FILE" "$NEW_NAME"
             gh release upload ${{ github.ref_name }} "$NEW_NAME"
           fi
+
+          # Rename macOS .app.tar.gz
+          TAR_FILE=$(find . -name "VantagePoint_*.app.tar.gz" -type f | head -1)
+          if [ -n "$TAR_FILE" ]; then
+            NEW_NAME="$(basename "$TAR_FILE") (macOS)"
+            gh release delete-asset ${{ github.ref_name }} "$(basename "$TAR_FILE")" -y
+            mv "$TAR_FILE" "$NEW_NAME"
+            gh release upload ${{ github.ref_name }} "$NEW_NAME"
+          fi
+
+      - name: Rename Windows artifacts to add OS label
+        if: matrix.platform == 'windows-latest'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Rename Windows .msi
+          $msiFile = Get-ChildItem -Path . -Filter "VantagePoint_*_x64_en-US.msi" -Recurse | Select-Object -First 1
+          if ($msiFile) {
+            $newName = "$($msiFile.Name) (Windows)"
+            gh release delete-asset ${{ github.ref_name }} "$($msiFile.Name)" -y
+            Rename-Item -Path $msiFile.FullName -NewName $newName
+            gh release upload ${{ github.ref_name }} $newName
+          }
 
   attach-user-readme:
     needs: release
