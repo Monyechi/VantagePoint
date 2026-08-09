@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   createJob,
   deleteLead,
+  deleteLeads,
   listLeads,
   updateLeadEmail,
   updateLeadNotes,
   updateLeadPlaceFields,
   updateLeadStatus,
+  updateLeadsStatus,
   type Lead,
 } from "@/lib/db/queries";
+import { confirmDialog } from "@/components/ui/confirm-dialog";
 import { subscribeJobs } from "@/lib/jobs/runner";
 import { getPlaceDetails } from "@/lib/connectors/places";
 import { enrichDomain } from "@/lib/connectors/enrichment";
@@ -43,6 +47,9 @@ export function LeadsPage() {
   const [refreshingPlace, setRefreshingPlace] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStatusValue, setBulkStatusValue] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const selectedRef = useRef<Lead | null>(null);
   useEffect(() => {
@@ -57,6 +64,14 @@ export function LeadsPage() {
       const updated = rows.find((l) => l.id === current.id) ?? null;
       setSelected(updated);
     }
+    // Drop any selected ids that no longer exist (e.g. deleted from the detail
+    // panel) so the bulk-action count never lags behind reality.
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const validIds = new Set(rows.map((l) => l.id));
+      const next = new Set([...prev].filter((id) => validIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
   }, []);
 
   useEffect(() => {
@@ -98,9 +113,78 @@ export function LeadsPage() {
 
   async function removeLead() {
     if (!selected) return;
+    const confirmed = await confirmDialog({
+      title: "Delete this lead?",
+      description: "This can't be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!confirmed) return;
     await deleteLead(selected.id);
     setSelected(null);
     await refresh();
+  }
+
+  function toggleSelectAll() {
+    const allFilteredSelected =
+      filteredLeads.length > 0 && filteredLeads.every((l) => selectedIds.has(l.id));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const lead of filteredLeads) {
+        if (allFilteredSelected) next.delete(lead.id);
+        else next.add(lead.id);
+      }
+      return next;
+    });
+  }
+
+  function toggleSelectOne(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  async function bulkChangeStatus(status: string) {
+    if (selectedIds.size === 0) return;
+    setBulkBusy(true);
+    try {
+      const ids = [...selectedIds];
+      await updateLeadsStatus(ids, status);
+      setNotice(`Marked ${ids.length} lead(s) as ${status}.`);
+      await refresh();
+    } finally {
+      setBulkStatusValue("");
+      setBulkBusy(false);
+    }
+  }
+
+  async function bulkDelete() {
+    if (selectedIds.size === 0) return;
+    const ids = [...selectedIds];
+    const confirmed = await confirmDialog({
+      title: `Delete ${ids.length} lead${ids.length === 1 ? "" : "s"}?`,
+      description: "This can't be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!confirmed) return;
+    setBulkBusy(true);
+    try {
+      await deleteLeads(ids);
+      if (selected && selectedIds.has(selected.id)) setSelected(null);
+      setSelectedIds(new Set());
+      setNotice(`Deleted ${ids.length} lead(s).`);
+      await refresh();
+    } finally {
+      setBulkBusy(false);
+    }
   }
 
   async function draftOutreach(channel: "email" | "linkedin" | "facebook") {
@@ -238,6 +322,36 @@ export function LeadsPage() {
           </Select>
         </div>
 
+        {selectedIds.size > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-muted)]/50 px-3 py-2">
+            <span className="text-sm font-medium">{selectedIds.size} selected</span>
+            <Select
+              value={bulkStatusValue}
+              onValueChange={(status) => {
+                setBulkStatusValue(status);
+                void bulkChangeStatus(status);
+              }}
+            >
+              <SelectTrigger className="h-8 w-40 text-xs" disabled={bulkBusy}>
+                <SelectValue placeholder="Mark as…" />
+              </SelectTrigger>
+              <SelectContent>
+                {LEAD_STATUSES.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button size="sm" variant="destructive" disabled={bulkBusy} onClick={() => void bulkDelete()}>
+              Delete
+            </Button>
+            <Button size="sm" variant="ghost" disabled={bulkBusy} onClick={clearSelection}>
+              Clear selection
+            </Button>
+          </div>
+        )}
+
         {leads.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-sm text-[var(--color-muted-foreground)]">
@@ -255,6 +369,15 @@ export function LeadsPage() {
             <table className="w-full text-left text-sm">
               <thead className="bg-[var(--color-muted)]/60 text-xs text-[var(--color-muted-foreground)]">
                 <tr>
+                  <th className="w-8 px-3 py-2">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-[var(--color-primary)]"
+                      checked={filteredLeads.length > 0 && filteredLeads.every((l) => selectedIds.has(l.id))}
+                      onChange={toggleSelectAll}
+                      aria-label="Select all"
+                    />
+                  </th>
                   <th className="px-3 py-2 font-medium">Business</th>
                   <th className="px-3 py-2 font-medium">Email</th>
                   <th className="px-3 py-2 font-medium">Score</th>
@@ -271,6 +394,15 @@ export function LeadsPage() {
                       selected?.id === lead.id ? "bg-[var(--color-primary)]/10" : ""
                     }`}
                   >
+                    <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-[var(--color-primary)]"
+                        checked={selectedIds.has(lead.id)}
+                        onChange={() => toggleSelectOne(lead.id)}
+                        aria-label={`Select ${lead.business || "lead"}`}
+                      />
+                    </td>
                     <td className="px-3 py-2.5">
                       <div className="font-medium">{lead.business || "—"}</div>
                       <div className="truncate text-xs text-[var(--color-muted-foreground)]">
@@ -309,14 +441,17 @@ export function LeadsPage() {
         <aside className="w-96 shrink-0 overflow-auto border-l border-[var(--color-border)] bg-[var(--color-card)]/50 p-6">
           <CardHeader className="p-0 pb-4">
             <CardTitle>{selected.business || "Lead"}</CardTitle>
-            <a
-              href={selected.website ?? "#"}
-              target="_blank"
-              rel="noreferrer"
-              className="text-xs text-[var(--color-primary)] hover:underline"
-            >
-              {selected.website}
-            </a>
+            {selected.website ? (
+              <button
+                type="button"
+                onClick={() => void openUrl(selected.website!).catch((err) => setNotice(String(err)))}
+                className="text-left text-xs text-[var(--color-primary)] hover:underline"
+              >
+                {selected.website}
+              </button>
+            ) : (
+              <p className="text-xs text-[var(--color-muted-foreground)]">No website on file</p>
+            )}
           </CardHeader>
           <div className="space-y-4 text-sm">
             <div className="space-y-1.5">

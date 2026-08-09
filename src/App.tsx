@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
+import { ChatPage } from "@/features/chat/ChatPage";
 import { ProspectPage } from "@/features/prospect/ProspectPage";
 import { LocalBusinessHunterPage } from "@/features/local-hunter/LocalBusinessHunterPage";
 import { LeadsPage } from "@/features/leads/LeadsPage";
@@ -10,6 +11,7 @@ import { AIModelsPage } from "@/features/ai-models/AIModelsPage";
 import { ConnectorsPage } from "@/features/connectors/ConnectorsPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { getDb } from "@/lib/db/client";
+import { resetOrphanedJobs } from "@/lib/db/queries";
 import { ensureDefaultRouting } from "@/lib/ai/routing";
 import { startJobRunner, stopJobRunner } from "@/lib/jobs/runner";
 import { getSellerProfile, isSellerProfileComplete } from "@/lib/settings/sellerProfile";
@@ -29,6 +31,7 @@ export default function App() {
         await initTheme();
         await ensureDefaultRouting();
         await ensureDefaultSearchPresets();
+        await resetOrphanedJobs();
         startJobRunner();
         const profile = await getSellerProfile();
         if (!cancelled) {
@@ -76,8 +79,9 @@ export default function App() {
       <Route element={<AppShell />}>
         <Route
           index
-          element={<Navigate to={needsOnboarding ? "/settings" : "/prospect"} replace />}
+          element={<Navigate to={needsOnboarding ? "/settings" : "/chat"} replace />}
         />
+        <Route path="chat" element={<ChatPage />} />
         <Route path="prospect" element={<ProspectPage />} />
         <Route path="local-hunter" element={<LocalBusinessHunterPage />} />
         <Route path="leads" element={<LeadsPage />} />

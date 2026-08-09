@@ -12,6 +12,7 @@
     "sql:allow-close",
     "updater:default",
     "process:default",
+    "opener:default",
     {
       "identifier": "http:default",
       "allow": [

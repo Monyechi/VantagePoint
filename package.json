@@ -14,10 +14,12 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-select": "^2.2.5",
     "@radix-ui/react-slot": "^1.2.3",
     "@tauri-apps/api": "^2.6.0",
     "@tauri-apps/plugin-http": "^2.5.0",
+    "@tauri-apps/plugin-opener": "^2.5.4",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-sql": "^2.3.0",
     "@tauri-apps/plugin-updater": "^2.10.1",

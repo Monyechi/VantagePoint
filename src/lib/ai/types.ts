@@ -11,7 +11,8 @@ export type TaskKind =
   | "lead_research"
   | "email_writing"
   | "linkedin_writing"
-  | "facebook_writing";
+  | "facebook_writing"
+  | "chat_orchestration";
 
 export interface CompletionRequest {
   system?: string;
@@ -61,6 +62,7 @@ export const TASK_KIND_LABELS: Record<TaskKind, string> = {
   email_writing: "Email Writing",
   linkedin_writing: "LinkedIn Writing",
   facebook_writing: "Facebook Writing",
+  chat_orchestration: "Chat Assistant",
 };
 
 export const PROVIDERS: ProviderDefinition[] = [
@@ -139,4 +141,5 @@ export const DEFAULT_ROUTING: ModelRouting[] = [
   { taskKind: "email_writing", providerId: "claude", modelId: "claude-sonnet-5" },
   { taskKind: "linkedin_writing", providerId: "claude", modelId: "claude-sonnet-5" },
   { taskKind: "facebook_writing", providerId: "claude", modelId: "claude-sonnet-5" },
+  { taskKind: "chat_orchestration", providerId: "deepseek", modelId: "deepseek-v4-pro" },
 ];

@@ -160,13 +160,57 @@ export async function fetchRawHtml(url: string): Promise<string> {
   return fetchRaw(url);
 }
 
+const CODE_FENCE = /```(?:json)?\s*([\s\S]*?)\s*```/i;
+
+/** Some models (chat-tuned ones especially) wrap JSON in a markdown code fence even
+ * when told not to — strip it before attempting to parse. */
+function stripCodeFence(text: string): string {
+  const fenced = text.match(CODE_FENCE);
+  return fenced ? fenced[1]! : text;
+}
+
+/** Scans for the first top-level `{...}` object, tracking brace depth and string
+ * state so braces inside string values (or any reasoning/prose the model emitted
+ * before/after the JSON) don't throw off the match — unlike a greedy regex to the
+ * *last* `}` in the text, which can grab too much or too little. Returns null if the
+ * object is unbalanced (most often: the response got truncated mid-JSON). */
+function extractBalancedJson(text: string): string | null {
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
 export function parseJsonLoose<T>(text: string): T {
-  const trimmed = text.trim();
+  const cleaned = stripCodeFence(text.trim()).trim();
   try {
-    return JSON.parse(trimmed) as T;
+    return JSON.parse(cleaned) as T;
   } catch {
-    const match = trimmed.match(/\{[\s\S]*\}/);
-    if (match) return JSON.parse(match[0]) as T;
+    const balanced = extractBalancedJson(cleaned);
+    if (balanced) {
+      try {
+        return JSON.parse(balanced) as T;
+      } catch {
+        // fall through to the error below
+      }
+    }
     throw new Error("Model did not return valid JSON");
   }
 }

@@ -219,6 +219,7 @@ export async function runProspectSearchJob(job: JobRow): Promise<void> {
     const icp = `${sellerProfileBrief(sellerProfile)}\n${offerBrief(payload)}`;
 
     let processed = 0;
+    let skipped = 0;
     for (let i = 0; i < target.length; i++) {
       const item = target[i]!;
       const { website, pageText } = pages[i]!;
@@ -238,13 +239,21 @@ export async function runProspectSearchJob(job: JobRow): Promise<void> {
 
       if (pageText.length > 100) {
         await log(`Analyzing and scoring as a potential client for your offer...`);
-        const result = await completeWithRouting("website_analysis", {
-          system: `You research sales LEADS for a seller. The prospect should be someone who might BUY the seller's offer — not a competitor who sells the same thing.
+        try {
+          const result = await completeWithRouting("website_analysis", {
+            system: `You research sales LEADS for a seller. The prospect must be someone who might BUY the seller's offer — never someone who SELLS it.
 Analyze the page AND score the lead in a single pass.
 Return strict JSON: { business_name, contact_name, email, summary, pain_points: string[], fit_notes, likely_buyer: boolean, score: number (0-100), reasons: string[] }.
-Mark likely_buyer false if this looks like a peer/competitor (e.g. another coach when the seller IS a coach), and penalize score heavily in that case.
+
+CRITICAL — set likely_buyer=false for ALL of these, they are not leads:
+- Any business that PROVIDES the seller's offer: agencies, studios, firms, freelancers, consultancies, "we build X" companies. If the seller sells web design, every web design/development/SEO/marketing agency is a COMPETITOR.
+- Directories, listicles, or "top 10 providers" roundups.
+- Job boards, hiring pages, training courses, or classes about the offer.
+- Government pages, chambers of commerce, news releases, event listings, and membership organizations.
+A REAL lead is a business in a DIFFERENT line of work that would PAY for the offer — e.g. a pizzeria, brewery, dentist, plumber, boutique, gym, or salon that needs the seller's help.
+
 Score 0-100 on fit as a CLIENT for the seller's offer — reward clear need, budget fit, location fit, and outreachability.`,
-          prompt: `${icp}
+            prompt: `${icp}
 
 Candidate page: ${website}
 Search snippet: ${item.snippet}
@@ -253,22 +262,44 @@ Page content:
 ${pageText.slice(0, 9000)}
 
 Extract who they are, whether they might need the seller's offer, and score them as a sales lead.`,
-          json: true,
-          temperature: 0.2,
-        }, job.id);
-        const parsed = parseJsonLoose<{
-          business_name?: string;
-          contact_name?: string;
-          email?: string;
-          summary?: string;
-          pain_points?: string[];
-          fit_notes?: string;
-          likely_buyer?: boolean;
-          score?: number;
-          reasons?: string[];
-        }>(result.text);
-        analysis = parsed;
-        scored = { score: parsed.score ?? 0, reasons: parsed.reasons ?? [] };
+            json: true,
+            temperature: 0.2,
+            // Denser pages push the model's output past the default 2048-token cap,
+            // truncating the response mid-JSON — same failure mode found and fixed in
+            // localBusinessPipeline.ts; give it more room before falling back.
+            maxTokens: 4096,
+          }, job.id);
+          const parsed = parseJsonLoose<{
+            business_name?: string;
+            contact_name?: string;
+            email?: string;
+            summary?: string;
+            pain_points?: string[];
+            fit_notes?: string;
+            likely_buyer?: boolean;
+            score?: number;
+            reasons?: string[];
+          }>(result.text);
+          analysis = parsed;
+          scored = { score: parsed.score ?? 0, reasons: parsed.reasons ?? [] };
+        } catch (err) {
+          // A malformed/truncated model response used to throw out of this loop
+          // entirely, aborting the whole job and losing every candidate not yet
+          // processed — one bad completion shouldn't cost the rest of the batch.
+          const msg = err instanceof Error ? err.message : String(err);
+          await log(`AI scoring failed for ${website}: ${msg}`, "warn");
+          analysis = {
+            business_name: item.title,
+            summary: "Website analyzed, but AI scoring failed — worth a manual look.",
+            pain_points: [],
+            fit_notes: "AI scoring error",
+            likely_buyer: true,
+          };
+          scored = {
+            score: 40,
+            reasons: [`AI scoring error: ${msg}`],
+          };
+        }
       } else {
         await log(`Thin or blocked content for ${website}; scoring conservatively from snippet`, "warn");
         analysis = {
@@ -284,11 +315,22 @@ Extract who they are, whether they might need the seller's offer, and score them
         };
       }
 
-      let score = Math.max(0, Math.min(100, Math.round(scored.score ?? 0)));
+      // Competitors/directories/job pages used to be saved with a capped score, which
+      // meant a search for "who needs web design" filled the list with web design
+      // agencies. They aren't low-quality leads, they're not leads at all — drop them.
       if (analysis.likely_buyer === false) {
-        score = Math.min(score, 35);
+        skipped += 1;
+        await log(
+          `Skipped ${analysis.business_name || website} — sells/lists this service, not a buyer.`,
+        );
+        processed += 1;
+        await updateJob(job.id, {
+          progress: 30 + Math.round((processed / target.length) * 65),
+        });
+        continue;
       }
 
+      const score = Math.max(0, Math.min(100, Math.round(scored.score ?? 0)));
       const email = analysis.email || emailsFromPage[0] || null;
 
       await upsertLead({
@@ -318,7 +360,10 @@ Extract who they are, whether they might need the seller's offer, and score them
       progress: 100,
       completed_at: nowIso(),
     });
-    await log(`Done. Processed ${processed} prospects.`);
+    await log(
+      `Done. Processed ${processed} prospect(s), saved ${processed - skipped} lead(s)` +
+        (skipped > 0 ? `, skipped ${skipped} that sell this service rather than buy it.` : "."),
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const cancelled = msg === "Job cancelled";

@@ -60,6 +60,10 @@ export interface Lead {
   place_id: string | null;
   place_synced_at: string | null;
   opportunity_flags: string | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  location_count: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -75,6 +79,8 @@ export interface OutreachMessage {
   updated_at: string;
 }
 
+export type SearchJobType = "prospect_search" | "local_business_search";
+
 export interface ProspectSearch {
   id: string;
   query_text: string;
@@ -87,6 +93,80 @@ export interface ProspectSearch {
   status: string;
   created_at: string;
   completed_at: string | null;
+  job_type: SearchJobType;
+  lat: number | null;
+  lng: number | null;
+  radius_miles: number | null;
+}
+
+export interface ChatThread {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  thread_id: string;
+  role: "user" | "assistant";
+  content: string;
+  response_json: string | null;
+  job_id: string | null;
+  search_id: string | null;
+  created_at: string;
+}
+
+export interface Market {
+  id: string;
+  name: string;
+  category: string;
+  location: string;
+  lat: number;
+  lng: number;
+  radius_miles: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MarketSnapshot {
+  id: string;
+  market_id: string;
+  search_id: string | null;
+  places_call_count: number | null;
+  coverage_complete: number | null;
+  entity_count: number | null;
+  status: string;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface MarketEntity {
+  id: string;
+  snapshot_id: string;
+  place_id: string | null;
+  name: string;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  phone: string | null;
+  website: string | null;
+  rating: number | null;
+  review_count: number | null;
+  location_count: number;
+  domain_registered_at: string | null;
+  domain_age_years: number | null;
+  tech_stack: string | null;
+  pagespeed_performance: number | null;
+  pagespeed_accessibility: number | null;
+  pagespeed_seo: number | null;
+  deterministic_flags: string | null;
+  attributes_json: string | null;
+  digital_maturity_score: number | null;
+  summary: string | null;
+  contact_name: string | null;
+  email: string | null;
+  created_at: string;
 }
 
 // ——— API keys (OS keychain) & settings ———
@@ -187,6 +267,16 @@ export async function listJobs(): Promise<JobRow[]> {
   return db.select<JobRow[]>("SELECT * FROM jobs ORDER BY created_at DESC LIMIT 200");
 }
 
+/** A job stuck 'running' from a session that was killed mid-search never resumes on
+ * its own — claimNextJob() only ever picks up 'queued' jobs. Call once at boot so an
+ * interrupted search shows back up as queued instead of hanging forever. */
+export async function resetOrphanedJobs(): Promise<void> {
+  const db = await getDb();
+  await db.execute(`UPDATE jobs SET state = 'queued', updated_at = $1 WHERE state = 'running'`, [
+    nowIso(),
+  ]);
+}
+
 export async function claimNextJob(): Promise<JobRow | null> {
   const db = await getDb();
   const rows = await db.select<JobRow[]>(
@@ -250,20 +340,25 @@ export async function listJobEvents(jobId: string): Promise<JobEvent[]> {
 
 export async function createProspectSearch(input: {
   queryText: string;
+  jobType: SearchJobType;
   niche?: string;
   location?: string;
   audience?: string;
   ticketSize?: string;
   sources: string[];
   extraUrls?: string;
+  lat?: number;
+  lng?: number;
+  radiusMiles?: number;
 }): Promise<ProspectSearch> {
   const db = await getDb();
   const id = uuid();
   const ts = nowIso();
   await db.execute(
     `INSERT INTO prospect_searches
-     (id, query_text, niche, location, audience, ticket_size, sources_json, extra_urls, status, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'running', $9)`,
+     (id, query_text, niche, location, audience, ticket_size, sources_json, extra_urls, status,
+      job_type, lat, lng, radius_miles, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'running', $9, $10, $11, $12, $13)`,
     [
       id,
       input.queryText,
@@ -273,6 +368,10 @@ export async function createProspectSearch(input: {
       input.ticketSize ?? null,
       JSON.stringify(input.sources),
       input.extraUrls ?? null,
+      input.jobType,
+      input.lat ?? null,
+      input.lng ?? null,
+      input.radiusMiles ?? null,
       ts,
     ],
   );
@@ -294,6 +393,35 @@ export async function updateProspectSearchStatus(
   );
 }
 
+/** Records how thorough a tiled Places sweep actually was, so "every X in this
+ * radius" is a claim the search row can back up rather than an unverified guess. */
+export async function recordSearchCoverage(
+  id: string,
+  coverage: { placesCallCount: number; coverageComplete: boolean },
+): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    `UPDATE prospect_searches SET places_call_count = $1, coverage_complete = $2 WHERE id = $3`,
+    [coverage.placesCallCount, coverage.coverageComplete ? 1 : 0, id],
+  );
+}
+
+/** Ledger candidates: searches of one pipeline type, recent enough to matter, not
+ * already failed/cancelled (an in-flight 'running'/'queued' search is the highest-value
+ * match — it catches "this exact search is already going" and avoids duplicate spend). */
+export async function listRecentSearchesByType(
+  jobType: SearchJobType,
+  sinceIso: string,
+): Promise<ProspectSearch[]> {
+  const db = await getDb();
+  return db.select<ProspectSearch[]>(
+    `SELECT * FROM prospect_searches
+     WHERE job_type = $1 AND created_at >= $2 AND status NOT IN ('failed', 'cancelled')
+     ORDER BY created_at DESC`,
+    [jobType, sinceIso],
+  );
+}
+
 // ——— Leads ———
 
 export async function upsertLead(input: {
@@ -312,6 +440,10 @@ export async function upsertLead(input: {
   rating?: number;
   reviewCount?: number;
   opportunityFlags?: string[];
+  address?: string;
+  lat?: number;
+  lng?: number;
+  locationCount?: number;
 }): Promise<Lead> {
   const db = await getDb();
 
@@ -349,8 +481,10 @@ export async function upsertLead(input: {
        rating = COALESCE($12, rating), review_count = COALESCE($13, review_count),
        place_id = COALESCE($14, place_id),
        place_synced_at = COALESCE($15, place_synced_at),
-       opportunity_flags = COALESCE($16, opportunity_flags), updated_at = $17
-       WHERE id = $18`,
+       opportunity_flags = COALESCE($16, opportunity_flags),
+       address = COALESCE($17, address), lat = COALESCE($18, lat), lng = COALESCE($19, lng),
+       location_count = COALESCE($20, location_count), updated_at = $21
+       WHERE id = $22`,
       [
         input.name ?? null,
         input.business ?? null,
@@ -368,6 +502,10 @@ export async function upsertLead(input: {
         input.placeId ?? null,
         input.placeId ? ts : null,
         opportunityFlagsJson,
+        input.address ?? null,
+        input.lat ?? null,
+        input.lng ?? null,
+        input.locationCount ?? null,
         ts,
         existing[0].id,
       ],
@@ -380,8 +518,8 @@ export async function upsertLead(input: {
     `INSERT INTO leads
      (id, search_id, name, business, email, website, score, status, summary, pain_points,
       score_reasons, campaign, phone, rating, review_count, place_id, place_synced_at,
-      opportunity_flags, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'new', $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $18)`,
+      opportunity_flags, address, lat, lng, location_count, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'new', $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $22)`,
     [
       id,
       input.searchId ?? null,
@@ -400,6 +538,10 @@ export async function upsertLead(input: {
       input.placeId ?? null,
       input.placeId ? ts : null,
       opportunityFlagsJson,
+      input.address ?? null,
+      input.lat ?? null,
+      input.lng ?? null,
+      input.locationCount ?? 1,
       ts,
     ],
   );
@@ -461,6 +603,16 @@ export async function updateLeadStatus(id: string, status: string): Promise<void
   ]);
 }
 
+export async function updateLeadsStatus(ids: string[], status: string): Promise<void> {
+  if (ids.length === 0) return;
+  const db = await getDb();
+  const idPlaceholders = ids.map((_, i) => `$${i + 3}`).join(", ");
+  await db.execute(
+    `UPDATE leads SET status = $1, updated_at = $2 WHERE id IN (${idPlaceholders})`,
+    [status, nowIso(), ...ids],
+  );
+}
+
 export async function updateLeadNotes(id: string, notes: string): Promise<void> {
   const db = await getDb();
   await db.execute(`UPDATE leads SET notes = $1, updated_at = $2 WHERE id = $3`, [
@@ -483,6 +635,14 @@ export async function deleteLead(id: string): Promise<void> {
   const db = await getDb();
   await db.execute(`DELETE FROM outreach_messages WHERE lead_id = $1`, [id]);
   await db.execute(`DELETE FROM leads WHERE id = $1`, [id]);
+}
+
+export async function deleteLeads(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const db = await getDb();
+  const placeholders = ids.map((_, i) => `$${i + 1}`).join(", ");
+  await db.execute(`DELETE FROM outreach_messages WHERE lead_id IN (${placeholders})`, ids);
+  await db.execute(`DELETE FROM leads WHERE id IN (${placeholders})`, ids);
 }
 
 // ——— Outreach ———
@@ -636,4 +796,284 @@ export async function sumUsageForJob(jobId: string): Promise<UsageSummary> {
     totalInputTokens: row?.total_in ?? 0,
     totalOutputTokens: row?.total_out ?? 0,
   };
+}
+
+// ——— Chat (multi-thread) ———
+
+export async function createChatThread(title: string): Promise<ChatThread> {
+  const db = await getDb();
+  const id = uuid();
+  const ts = nowIso();
+  await db.execute(
+    `INSERT INTO chat_threads (id, title, created_at, updated_at) VALUES ($1, $2, $3, $3)`,
+    [id, title, ts],
+  );
+  const rows = await db.select<ChatThread[]>("SELECT * FROM chat_threads WHERE id = $1", [id]);
+  return rows[0]!;
+}
+
+export async function listChatThreads(): Promise<ChatThread[]> {
+  const db = await getDb();
+  return db.select<ChatThread[]>("SELECT * FROM chat_threads ORDER BY updated_at DESC");
+}
+
+async function touchChatThread(id: string): Promise<void> {
+  const db = await getDb();
+  await db.execute(`UPDATE chat_threads SET updated_at = $1 WHERE id = $2`, [nowIso(), id]);
+}
+
+export async function deleteChatThread(id: string): Promise<void> {
+  const db = await getDb();
+  await db.execute(`DELETE FROM chat_messages WHERE thread_id = $1`, [id]);
+  await db.execute(`DELETE FROM chat_threads WHERE id = $1`, [id]);
+}
+
+export async function clearAllChatThreads(): Promise<void> {
+  const db = await getDb();
+  await db.execute(`DELETE FROM chat_messages`);
+  await db.execute(`DELETE FROM chat_threads`);
+}
+
+export async function insertChatMessage(input: {
+  threadId: string;
+  role: "user" | "assistant";
+  content: string;
+  responseJson?: unknown;
+  jobId?: string;
+  searchId?: string;
+}): Promise<ChatMessage> {
+  const db = await getDb();
+  const id = uuid();
+  const ts = nowIso();
+  await db.execute(
+    `INSERT INTO chat_messages (id, thread_id, role, content, response_json, job_id, search_id, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      id,
+      input.threadId,
+      input.role,
+      input.content,
+      input.responseJson !== undefined ? JSON.stringify(input.responseJson) : null,
+      input.jobId ?? null,
+      input.searchId ?? null,
+      ts,
+    ],
+  );
+  // Bumps the thread to the top of the list, same as any chat app sorting by
+  // last-activity rather than creation time.
+  await touchChatThread(input.threadId);
+  const rows = await db.select<ChatMessage[]>("SELECT * FROM chat_messages WHERE id = $1", [id]);
+  return rows[0]!;
+}
+
+export async function listChatMessages(threadId: string): Promise<ChatMessage[]> {
+  const db = await getDb();
+  return db.select<ChatMessage[]>(
+    "SELECT * FROM chat_messages WHERE thread_id = $1 ORDER BY created_at ASC",
+    [threadId],
+  );
+}
+
+// ——— Markets (territory sweeps) ———
+
+const MARKET_MATCH_EPSILON_DEGREES = 0.01; // ~0.7 mile — close enough to call it the same center
+
+/** Finds an existing market whose category/location/radius/center match this sweep's
+ * request, or creates one — so repeated sweeps of the same territory accumulate
+ * snapshots under one market (a history) instead of each becoming a disconnected
+ * one-off, which is what a coverage/trend view over time needs. */
+export async function getOrCreateMarket(input: {
+  name: string;
+  category: string;
+  location: string;
+  lat: number;
+  lng: number;
+  radiusMiles: number;
+}): Promise<Market> {
+  const db = await getDb();
+  const normalizedCategory = input.category.trim().toLowerCase();
+  const candidates = await db.select<Market[]>(
+    `SELECT * FROM markets WHERE LOWER(category) = $1 AND radius_miles = $2`,
+    [normalizedCategory, input.radiusMiles],
+  );
+  const match = candidates.find(
+    (m) =>
+      Math.abs(m.lat - input.lat) < MARKET_MATCH_EPSILON_DEGREES &&
+      Math.abs(m.lng - input.lng) < MARKET_MATCH_EPSILON_DEGREES,
+  );
+  if (match) return match;
+
+  const id = uuid();
+  const ts = nowIso();
+  await db.execute(
+    `INSERT INTO markets (id, name, category, location, lat, lng, radius_miles, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)`,
+    [id, input.name, input.category, input.location, input.lat, input.lng, input.radiusMiles, ts],
+  );
+  const rows = await db.select<Market[]>("SELECT * FROM markets WHERE id = $1", [id]);
+  return rows[0]!;
+}
+
+export async function listMarkets(): Promise<Market[]> {
+  const db = await getDb();
+  return db.select<Market[]>("SELECT * FROM markets ORDER BY updated_at DESC");
+}
+
+export async function getMarket(id: string): Promise<Market | null> {
+  const db = await getDb();
+  const rows = await db.select<Market[]>("SELECT * FROM markets WHERE id = $1", [id]);
+  return rows[0] ?? null;
+}
+
+export async function createMarketSnapshot(input: {
+  marketId: string;
+  searchId?: string;
+}): Promise<MarketSnapshot> {
+  const db = await getDb();
+  const id = uuid();
+  const ts = nowIso();
+  await db.execute(
+    `INSERT INTO market_snapshots (id, market_id, search_id, status, created_at)
+     VALUES ($1, $2, $3, 'running', $4)`,
+    [id, input.marketId, input.searchId ?? null, ts],
+  );
+  const rows = await db.select<MarketSnapshot[]>("SELECT * FROM market_snapshots WHERE id = $1", [
+    id,
+  ]);
+  return rows[0]!;
+}
+
+export async function completeMarketSnapshot(
+  id: string,
+  fields: {
+    placesCallCount: number;
+    coverageComplete: boolean;
+    entityCount: number;
+    status?: string;
+  },
+): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    `UPDATE market_snapshots SET places_call_count = $1, coverage_complete = $2,
+     entity_count = $3, status = $4, completed_at = $5 WHERE id = $6`,
+    [
+      fields.placesCallCount,
+      fields.coverageComplete ? 1 : 0,
+      fields.entityCount,
+      fields.status ?? "completed",
+      nowIso(),
+      id,
+    ],
+  );
+}
+
+export async function getMarketSnapshot(id: string): Promise<MarketSnapshot | null> {
+  const db = await getDb();
+  const rows = await db.select<MarketSnapshot[]>("SELECT * FROM market_snapshots WHERE id = $1", [
+    id,
+  ]);
+  return rows[0] ?? null;
+}
+
+export async function getMarketSnapshotBySearchId(searchId: string): Promise<MarketSnapshot | null> {
+  const db = await getDb();
+  const rows = await db.select<MarketSnapshot[]>(
+    "SELECT * FROM market_snapshots WHERE search_id = $1 LIMIT 1",
+    [searchId],
+  );
+  return rows[0] ?? null;
+}
+
+export async function listSnapshotsByMarket(marketId: string): Promise<MarketSnapshot[]> {
+  const db = await getDb();
+  return db.select<MarketSnapshot[]>(
+    "SELECT * FROM market_snapshots WHERE market_id = $1 ORDER BY created_at DESC",
+    [marketId],
+  );
+}
+
+export async function insertMarketEntity(input: {
+  snapshotId: string;
+  placeId?: string;
+  name: string;
+  address?: string;
+  lat?: number;
+  lng?: number;
+  phone?: string;
+  website?: string;
+  rating?: number;
+  reviewCount?: number;
+  locationCount?: number;
+  domainRegisteredAt?: string;
+  domainAgeYears?: number;
+  techStack?: string[];
+  pagespeedPerformance?: number;
+  pagespeedAccessibility?: number;
+  pagespeedSeo?: number;
+  deterministicFlags?: string[];
+  attributes?: Record<string, boolean>;
+  digitalMaturityScore?: number;
+  summary?: string;
+  contactName?: string;
+  email?: string;
+}): Promise<MarketEntity> {
+  const db = await getDb();
+  const id = uuid();
+  const ts = nowIso();
+  await db.execute(
+    `INSERT INTO market_entities
+     (id, snapshot_id, place_id, name, address, lat, lng, phone, website, rating, review_count,
+      location_count, domain_registered_at, domain_age_years, tech_stack, pagespeed_performance,
+      pagespeed_accessibility, pagespeed_seo, deterministic_flags, attributes_json,
+      digital_maturity_score, summary, contact_name, email, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
+    [
+      id,
+      input.snapshotId,
+      input.placeId ?? null,
+      input.name,
+      input.address ?? null,
+      input.lat ?? null,
+      input.lng ?? null,
+      input.phone ?? null,
+      input.website ?? null,
+      input.rating ?? null,
+      input.reviewCount ?? null,
+      input.locationCount ?? 1,
+      input.domainRegisteredAt ?? null,
+      input.domainAgeYears ?? null,
+      input.techStack ? JSON.stringify(input.techStack) : null,
+      input.pagespeedPerformance ?? null,
+      input.pagespeedAccessibility ?? null,
+      input.pagespeedSeo ?? null,
+      input.deterministicFlags ? JSON.stringify(input.deterministicFlags) : null,
+      input.attributes ? JSON.stringify(input.attributes) : null,
+      input.digitalMaturityScore ?? null,
+      input.summary ?? null,
+      input.contactName ?? null,
+      input.email ?? null,
+      ts,
+    ],
+  );
+  const rows = await db.select<MarketEntity[]>("SELECT * FROM market_entities WHERE id = $1", [id]);
+  return rows[0]!;
+}
+
+export async function listMarketEntitiesBySnapshot(snapshotId: string): Promise<MarketEntity[]> {
+  const db = await getDb();
+  return db.select<MarketEntity[]>(
+    "SELECT * FROM market_entities WHERE snapshot_id = $1 ORDER BY digital_maturity_score DESC",
+    [snapshotId],
+  );
+}
+
+export async function countMarketEntitiesBySearchId(searchId: string): Promise<number> {
+  const snapshot = await getMarketSnapshotBySearchId(searchId);
+  if (!snapshot) return 0;
+  const db = await getDb();
+  const rows = await db.select<{ count: number }[]>(
+    "SELECT COUNT(*) as count FROM market_entities WHERE snapshot_id = $1",
+    [snapshot.id],
+  );
+  return rows[0]?.count ?? 0;
 }

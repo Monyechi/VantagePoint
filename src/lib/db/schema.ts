@@ -150,4 +150,163 @@ export const MIGRATIONS: Migration[] = [
       `ALTER TABLE leads ADD COLUMN opportunity_flags TEXT`,
     ],
   },
+  {
+    version: 4,
+    statements: [
+      // Search ledger fields. lat/lng are the geocoded CENTER POINT of the free-text
+      // location string a search was run for — not a cache of any individual Google
+      // Places business record, so this doesn't reopen the v3 comment above about not
+      // persisting Places payloads. radius_miles/lat/lng stay NULL for prospect_search
+      // rows (no fixed-radius search-circle concept there).
+      `ALTER TABLE prospect_searches ADD COLUMN lat REAL`,
+      `ALTER TABLE prospect_searches ADD COLUMN lng REAL`,
+      `ALTER TABLE prospect_searches ADD COLUMN radius_miles REAL`,
+      // Discriminates which pipeline wrote a row — both local_business_search and
+      // prospect_search share this one table with no prior way to tell them apart.
+      `ALTER TABLE prospect_searches ADD COLUMN job_type TEXT NOT NULL DEFAULT 'prospect_search'`,
+
+      `CREATE INDEX IF NOT EXISTS idx_prospect_searches_job_type_created
+        ON prospect_searches(job_type, created_at)`,
+
+      // Chat: a single implicit persistent thread — insert-only, rows are never
+      // updated, so reload is just "load them all in created_at order."
+      `CREATE TABLE IF NOT EXISTS chat_messages (
+        id TEXT PRIMARY KEY,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        response_json TEXT,
+        job_id TEXT,
+        search_id TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (job_id) REFERENCES jobs(id),
+        FOREIGN KEY (search_id) REFERENCES prospect_searches(id)
+      )`,
+
+      `CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at)`,
+    ],
+  },
+  {
+    version: 5,
+    statements: [
+      // Multi-thread chat history — each thread is its own conversation (new chat /
+      // switch back / delete), sorted by last activity like a normal chat app.
+      `CREATE TABLE IF NOT EXISTS chat_threads (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_chat_threads_updated_at ON chat_threads(updated_at)`,
+
+      `ALTER TABLE chat_messages ADD COLUMN thread_id TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_id ON chat_messages(thread_id)`,
+
+      // Backfill: v4 shipped chat as a single implicit thread. Give any messages sent
+      // before this migration a home thread instead of leaving them orphaned with
+      // thread_id = NULL. INSERT OR IGNORE makes this a no-op on a fresh/empty
+      // chat_messages table — SQLite's conflict resolution suppresses the NOT NULL
+      // violation on created_at/updated_at that MIN()/MAX() over zero rows produces.
+      `INSERT OR IGNORE INTO chat_threads (id, title, created_at, updated_at)
+        SELECT 'legacy', 'Earlier messages', MIN(created_at), MAX(created_at) FROM chat_messages`,
+      `UPDATE chat_messages SET thread_id = 'legacy' WHERE thread_id IS NULL`,
+    ],
+  },
+  {
+    version: 6,
+    statements: [
+      // Territory sweep support. address/lat/lng are the business's own location —
+      // fetched from Places (which we already pay for) and previously discarded before
+      // reaching storage. Treated as a refreshable cache alongside the existing
+      // place_synced_at column, same posture as the other Places-sourced fields already
+      // on this table (see the v3 migration comment on Google Maps Platform's caching terms).
+      `ALTER TABLE leads ADD COLUMN address TEXT`,
+      `ALTER TABLE leads ADD COLUMN lat REAL`,
+      `ALTER TABLE leads ADD COLUMN lng REAL`,
+      // Multi-location businesses used to be silently dropped after the first location
+      // found sharing a domain. Now collapsed into one row with a count instead of lost.
+      `ALTER TABLE leads ADD COLUMN location_count INTEGER DEFAULT 1`,
+
+      // Coverage accounting for a tiled Places sweep, so "every dental practice in this
+      // radius" is a claim the search row can back up rather than an unverified guess.
+      `ALTER TABLE prospect_searches ADD COLUMN places_call_count INTEGER`,
+      `ALTER TABLE prospect_searches ADD COLUMN coverage_complete INTEGER`,
+    ],
+  },
+  {
+    version: 7,
+    statements: [
+      // Market Sweep data model. Deliberately separate from `leads` rather than
+      // overloading it: leads is CRM-shaped (status, campaign, an opportunity score for
+      // a seller) and market data is descriptive (a business profile, not a sales
+      // lead) — see the v6 comment above for the fields this supersedes for new sweeps.
+      //
+      // markets: a saved territory + category definition, reused across repeated
+      // sweeps of the same area so runs over time form a history under one market
+      // rather than each becoming a disconnected one-off.
+      `CREATE TABLE IF NOT EXISTS markets (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        category TEXT NOT NULL,
+        location TEXT NOT NULL,
+        lat REAL NOT NULL,
+        lng REAL NOT NULL,
+        radius_miles REAL NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+
+      // market_snapshots: one sweep run against a market, with the coverage/cost
+      // accounting the enumeration engine produces.
+      `CREATE TABLE IF NOT EXISTS market_snapshots (
+        id TEXT PRIMARY KEY,
+        market_id TEXT NOT NULL,
+        search_id TEXT,
+        places_call_count INTEGER,
+        coverage_complete INTEGER,
+        entity_count INTEGER,
+        status TEXT NOT NULL DEFAULT 'running',
+        created_at TEXT NOT NULL,
+        completed_at TEXT,
+        FOREIGN KEY (market_id) REFERENCES markets(id),
+        FOREIGN KEY (search_id) REFERENCES prospect_searches(id)
+      )`,
+
+      // market_entities: one row per business per snapshot — the full profile.
+      // attributes_json holds the LLM-derived answers for whatever the active audit
+      // lens asked (see src/lib/settings/auditLens.ts), so the schema doesn't need to
+      // change when the questions do.
+      `CREATE TABLE IF NOT EXISTS market_entities (
+        id TEXT PRIMARY KEY,
+        snapshot_id TEXT NOT NULL,
+        place_id TEXT,
+        name TEXT NOT NULL,
+        address TEXT,
+        lat REAL,
+        lng REAL,
+        phone TEXT,
+        website TEXT,
+        rating REAL,
+        review_count INTEGER,
+        location_count INTEGER NOT NULL DEFAULT 1,
+        domain_registered_at TEXT,
+        domain_age_years REAL,
+        tech_stack TEXT,
+        pagespeed_performance INTEGER,
+        pagespeed_accessibility INTEGER,
+        pagespeed_seo INTEGER,
+        deterministic_flags TEXT,
+        attributes_json TEXT,
+        digital_maturity_score INTEGER,
+        summary TEXT,
+        contact_name TEXT,
+        email TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (snapshot_id) REFERENCES market_snapshots(id)
+      )`,
+
+      `CREATE INDEX IF NOT EXISTS idx_market_snapshots_market_id ON market_snapshots(market_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_market_snapshots_search_id ON market_snapshots(search_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_market_entities_snapshot_id ON market_entities(snapshot_id)`,
+    ],
+  },
 ];

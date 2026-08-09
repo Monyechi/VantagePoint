@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { DuplicateSearchNotice } from "@/components/search/DuplicateSearchNotice";
 import {
   createJob,
   createProspectSearch,
@@ -23,6 +25,7 @@ import {
   type SearchPreset,
 } from "@/lib/db/queries";
 import { subscribeJobs } from "@/lib/jobs/runner";
+import { checkProspectLedger, type LedgerMatch } from "@/lib/jobs/searchLedger";
 import {
   BUDGET_BANDS,
   BUYER_TYPES,
@@ -46,6 +49,15 @@ import {
 const DEFAULT_INDUSTRY = INDUSTRIES[0]!;
 const DEFAULT_SERVICE = DEFAULT_INDUSTRY.services[0]!;
 const RESULT_COUNT_OPTIONS = [10, 25, 50];
+
+interface LaunchInput {
+  niche: string;
+  location: string;
+  audience: string;
+  ticketSize: string;
+  queryText: string;
+  queries: string[];
+}
 
 function serviceDefaults(industryId: string, serviceId: string) {
   const found = findService(industryId, serviceId);
@@ -85,6 +97,10 @@ export function ProspectPage() {
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [pendingMatch, setPendingMatch] = useState<LedgerMatch | null>(null);
+  const [pendingLaunch, setPendingLaunch] = useState<LaunchInput | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     void listSearchPresets().then(setPresets);
@@ -217,6 +233,40 @@ export function ProspectPage() {
     setPresets(await listSearchPresets());
   }
 
+  async function launchSearch(input: LaunchInput) {
+    const search = await createProspectSearch({
+      queryText: input.queryText,
+      jobType: "prospect_search",
+      niche: input.niche,
+      location: input.location,
+      audience: input.audience,
+      ticketSize: input.ticketSize,
+      sources,
+      extraUrls,
+    });
+    const job = await createJob({
+      type: "prospect_search",
+      searchId: search.id,
+      payload: {
+        searchId: search.id,
+        queryText: input.queryText,
+        niche: input.niche,
+        location: input.location,
+        audience: input.audience,
+        ticketSize: input.ticketSize,
+        sources,
+        extraUrls,
+        maxResults: resultCount,
+        queries: input.queries,
+        notes,
+      },
+    });
+    setActiveJobId(job.id);
+    setEvents([]);
+    setPendingMatch(null);
+    setPendingLaunch(null);
+  }
+
   async function startSearch() {
     setError(null);
     if (country.hasStates && !stateId) {
@@ -259,40 +309,45 @@ export function ProspectPage() {
       );
 
       const queryText = [niche, location, audience, ticketSize].filter(Boolean).join(" · ");
+      const launchInput: LaunchInput = { niche, location, audience, ticketSize, queryText, queries };
 
-      const search = await createProspectSearch({
-        queryText,
-        niche,
-        location,
-        audience,
-        ticketSize,
-        sources,
-        extraUrls,
-      });
-      const job = await createJob({
-        type: "prospect_search",
-        searchId: search.id,
-        payload: {
-          searchId: search.id,
-          queryText,
-          niche,
-          location,
-          audience,
-          ticketSize,
-          sources,
-          extraUrls,
-          maxResults: resultCount,
-          queries,
-          notes,
-        },
-      });
-      setActiveJobId(job.id);
-      setEvents([]);
+      const match = await checkProspectLedger({ niche, location });
+      if (match) {
+        setPendingMatch(match);
+        setPendingLaunch(launchInput);
+        return;
+      }
+
+      await launchSearch(launchInput);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function handleSearchAgain() {
+    if (!pendingLaunch) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await launchSearch(pendingLaunch);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleDismissMatch() {
+    setPendingMatch(null);
+    setPendingLaunch(null);
+  }
+
+  function handleViewLeads() {
+    setPendingMatch(null);
+    setPendingLaunch(null);
+    navigate("/leads");
   }
 
   return (
@@ -632,6 +687,18 @@ export function ProspectPage() {
           </div>
           {error && (
             <p className="text-sm text-[var(--color-destructive)] sm:col-span-2">{error}</p>
+          )}
+          {pendingMatch && (
+            <div className="sm:col-span-2">
+              <DuplicateSearchNotice
+                match={pendingMatch}
+                what={`${industry.label} — ${service.label} leads${pendingLaunch?.location ? ` near ${pendingLaunch.location}` : ""}`}
+                onSearchAgain={() => void handleSearchAgain()}
+                onViewLeads={handleViewLeads}
+                onDismiss={handleDismissMatch}
+                busy={busy}
+              />
+            </div>
           )}
         </CardContent>
       </Card>

@@ -127,8 +127,8 @@ export function ConnectorsPage() {
           Connectors
         </h1>
         <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">
-          AI is the brain — connectors are how work actually gets done. Configure the ones you
-          have keys for; everything else here is on the roadmap.
+          AI is the brain — connectors are how work actually gets done. Add keys for the ones you
+          use; free connectors work automatically.
         </p>
       </div>
 
@@ -141,8 +141,7 @@ export function ConnectorsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               {connectors.map((connector) => {
-                const isImplemented = connector.status === "implemented";
-                const needsKey = isImplemented && connector.requiresKey !== false;
+                const needsKey = connector.requiresKey !== false;
                 const hasKey = savedKeys[connector.id];
                 const isEmailProvider = EMAIL_PROVIDER_IDS.has(connector.id);
                 return (
@@ -157,22 +156,12 @@ export function ConnectorsPage() {
                           {connector.description}
                         </div>
                       </div>
-                      <Badge
-                        variant={
-                          !isImplemented ? "muted" : needsKey && !hasKey ? "warning" : "success"
-                        }
-                      >
-                        {!isImplemented
-                          ? "Coming soon"
-                          : needsKey
-                            ? hasKey
-                              ? "Connected"
-                              : "Needs key"
-                            : "Active"}
+                      <Badge variant={needsKey && !hasKey ? "warning" : "success"}>
+                        {needsKey ? (hasKey ? "Connected" : "Needs key") : "Active"}
                       </Badge>
                     </div>
 
-                    {isImplemented && !needsKey && (
+                    {!needsKey && (
                       <p className="text-xs text-[var(--color-muted-foreground)]">
                         No key needed — works automatically.
                       </p>

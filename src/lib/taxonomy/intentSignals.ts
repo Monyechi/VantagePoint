@@ -49,7 +49,13 @@ export const INTENT_SIGNALS: Record<string, IntentSignal> = {
 };
 
 export interface QueryContext {
+  /** What the SELLER sells. Only ever used inside "someone is publicly asking for
+   * this" phrasings — never as the bare subject of a query, since searching a
+   * service name returns the agencies who rank for it, not the businesses needing it. */
   vertical: string;
+  /** The kind of business being looked FOR (e.g. "pizza restaurant"). This is the
+   * real subject of most queries. Falls back to the buyer type when unset. */
+  targetVertical?: string;
   buyerType: string;
   city: string;
   state: string;
@@ -60,40 +66,55 @@ function loc(ctx: QueryContext): string {
   return [ctx.city, ctx.state].filter(Boolean).join(" ").trim() || ctx.country;
 }
 
+/** Who we're hunting for. Never the seller's own service. */
+function target(ctx: QueryContext): string {
+  return (ctx.targetVertical ?? "").trim() || ctx.buyerType;
+}
+
+/** Appended to any query that has to mention the seller's service by name, to push
+ * down the agencies/freelancers/directories that SEO for exactly those words — they
+ * are competitors, not leads. */
+const EXCLUDE_PROVIDERS =
+  '-agency -agencies -freelancer -portfolio -"our services" -"our work" -"hire us" -"contact us today" -pricing';
+
 /** Deterministic Google query templates per intent signal — no LLM call required. */
 export const INTENT_QUERY_TEMPLATES: Record<string, (ctx: QueryContext) => string[]> = {
+  // NOTE: a business with no website has no page for a text search to return, so this
+  // signal is only truly answerable by Local Business Hunter (Google Places, which
+  // audits each business directly). These queries are a weak proxy — social-only
+  // listings — and the UI should steer no-website hunting at that tool instead.
   no_website: (c) => [
-    `"${c.buyerType}" ${loc(c)} "find us on facebook" -website -"www."`,
-    `${loc(c)} ${c.vertical} "call us" -site:facebook.com -"www."`,
+    `"${target(c)}" ${loc(c)} site:facebook.com "call us" -"www."`,
+    `"${target(c)}" ${loc(c)} "find us on facebook" -"visit our website"`,
   ],
   outdated_site: (c) => [
-    `${loc(c)} ${c.vertical} "under construction" OR "coming soon" site`,
-    `${loc(c)} ${c.vertical} "est. 20" -"www.squarespace" -"www.wix"`,
+    `"${target(c)}" ${loc(c)} "under construction" OR "coming soon"`,
+    `"${target(c)}" ${loc(c)} "copyright 201" -squarespace -wix`,
   ],
   hiring_dev: (c) => [
-    `${loc(c)} "hiring" ${c.vertical} "looking for" -jobs`,
-    `${loc(c)} "we need" ${c.vertical} "help wanted"`,
+    `"${target(c)}" ${loc(c)} "we're hiring" ${c.vertical} ${EXCLUDE_PROVIDERS}`,
+    `"${target(c)}" ${loc(c)} "help wanted" ${c.vertical} ${EXCLUDE_PROVIDERS}`,
   ],
   looking_for_help: (c) => [
-    `"looking for" ${c.vertical} ${loc(c)}`,
-    `"need" ${c.vertical} "recommend" ${loc(c)}`,
-    `"anyone know a good" ${c.vertical} ${loc(c)}`,
+    `"looking for a" ${c.vertical} ${loc(c)} site:reddit.com`,
+    `"can anyone recommend" ${c.vertical} ${loc(c)} ${EXCLUDE_PROVIDERS}`,
+    `"${target(c)}" ${loc(c)} "need help with" ${c.vertical} ${EXCLUDE_PROVIDERS}`,
   ],
   recent_funding: (c) => [
-    `${loc(c)} "${c.buyerType}" "raised" "seed" OR "series a"`,
-    `${loc(c)} "${c.buyerType}" "just launched" OR "newly opened"`,
+    `"${target(c)}" ${loc(c)} "raised" "seed" OR "series a"`,
+    `"${target(c)}" ${loc(c)} "just opened" OR "now open" OR "newly opened"`,
   ],
   rfp_posted: (c) => [
-    `${loc(c)} "RFP" ${c.vertical}`,
-    `"request for proposal" ${c.vertical} ${loc(c)}`,
+    `"request for proposal" ${c.vertical} ${loc(c)} ${EXCLUDE_PROVIDERS}`,
+    `"RFP" ${c.vertical} ${loc(c)} "submit" ${EXCLUDE_PROVIDERS}`,
   ],
   competitor_switch: (c) => [
-    `"switching from" OR "looking for an alternative to" ${c.vertical}`,
-    `"not happy with our" ${c.vertical} ${loc(c)}`,
+    `"switching from" OR "alternative to" ${c.vertical} site:reddit.com`,
+    `"not happy with our" ${c.vertical} ${loc(c)} ${EXCLUDE_PROVIDERS}`,
   ],
   local_no_presence: (c) => [
-    `${loc(c)} ${c.vertical} "near me" -directory -yelp -yellowpages`,
-    `best ${c.vertical} ${loc(c)} "${c.buyerType}"`,
+    `"${target(c)}" ${loc(c)} -directory -yelp -yellowpages -tripadvisor`,
+    `"${target(c)}" ${loc(c)} "family owned" OR "locally owned"`,
   ],
 };
 
@@ -110,8 +131,7 @@ export function buildDeterministicQueries(
   for (const label of customSignalLabels) {
     const trimmed = label.trim();
     if (!trimmed) continue;
-    queries.push(`"${trimmed}" ${loc(ctx)} ${ctx.vertical}`);
-    queries.push(`${trimmed} ${loc(ctx)} "${ctx.buyerType}"`);
+    queries.push(`"${target(ctx)}" ${loc(ctx)} "${trimmed}" ${EXCLUDE_PROVIDERS}`);
   }
   return [...new Set(queries)].slice(0, 8);
 }

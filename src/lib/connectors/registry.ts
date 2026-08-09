@@ -39,22 +39,12 @@ export const CONNECTORS: Connector[] = [
       'Resend\'s recommended "sending only" keys can\'t be validated without sending a real email — checked on first send.',
   },
 
-  // Calendar
-  { id: "google_calendar", name: "Google Calendar", category: "calendar", description: "Book meetings automatically.", status: "planned" },
-  { id: "outlook_calendar", name: "Microsoft Outlook", category: "calendar", description: "Book meetings automatically.", status: "planned" },
-
-  // CRM
-  { id: "hubspot", name: "HubSpot", category: "crm", description: "Sync leads to an external CRM.", status: "planned" },
-  { id: "salesforce", name: "Salesforce", category: "crm", description: "Sync leads to an external CRM.", status: "planned" },
-  { id: "pipedrive", name: "Pipedrive", category: "crm", description: "Sync leads to an external CRM.", status: "planned" },
-  { id: "zoho", name: "Zoho CRM", category: "crm", description: "Sync leads to an external CRM.", status: "planned" },
-
   // Maps
   {
     id: "google_places",
     name: "Google Places",
     category: "maps",
-    description: "Local Business Hunter — find businesses by city + type + radius, flag the ones with no website.",
+    description: "Market Sweep — enumerate every business by city + type + radius, flag the ones with no website.",
     status: "implemented",
     keyHint: 'Enter a Google Maps Platform key in Connectors (needs "Places API (New)" and "Geocoding API" enabled).',
   },
@@ -62,7 +52,7 @@ export const CONNECTORS: Connector[] = [
     id: "openstreetmap",
     name: "OpenStreetMap",
     category: "maps",
-    description: "Free geocoding fallback for Local Business Hunter when no Google key is set — used automatically, no key needed.",
+    description: "Free geocoding fallback for Market Sweep when no Google key is set — used automatically, no key needed.",
     status: "implemented",
     requiresKey: false,
   },
@@ -110,7 +100,7 @@ export const CONNECTORS: Connector[] = [
     id: "google_pagespeed",
     name: "Google PageSpeed",
     category: "website_analysis",
-    description: "Speed, accessibility, and SEO scores — feeds the Local Business Hunter's opportunity score.",
+    description: "Speed, accessibility, and SEO scores — feeds Market Sweep's digital-maturity profile.",
     status: "implemented",
     keyHint: 'Enter a Google Cloud API key with "PageSpeed Insights API" enabled in Connectors — can be the same key as Google Places.',
   },
@@ -136,10 +126,6 @@ export const CONNECTORS: Connector[] = [
       'Register a "script" app at reddit.com/prefs/apps, then enter as "client_id:client_secret" in Connectors.',
   },
 
-  // Notifications
-  { id: "discord", name: "Discord", category: "notifications", description: "Job/lead notifications.", status: "planned" },
-  { id: "slack", name: "Slack", category: "notifications", description: "Job/lead notifications.", status: "planned" },
-
   // Documents
   {
     id: "pdf_generation",
@@ -155,14 +141,11 @@ export function connectorsByCategory(): { category: Connector["category"]; conne
   const order: Connector["category"][] = [
     "search",
     "email",
-    "calendar",
-    "crm",
     "maps",
     "company_intel",
     "website_analysis",
     "domain",
     "social",
-    "notifications",
     "documents",
   ];
   return order.map((category) => ({

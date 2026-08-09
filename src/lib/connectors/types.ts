@@ -1,31 +1,25 @@
 export type ConnectorCategory =
   | "search"
   | "email"
-  | "calendar"
-  | "crm"
   | "maps"
   | "company_intel"
   | "website_analysis"
   | "domain"
   | "social"
-  | "notifications"
   | "documents";
 
 export const CONNECTOR_CATEGORY_LABELS: Record<ConnectorCategory, string> = {
   search: "Web Search",
   email: "Email",
-  calendar: "Calendar",
-  crm: "CRM",
   maps: "Maps & Places",
   company_intel: "Company Intelligence",
   website_analysis: "Website Tech & SEO",
   domain: "Domain",
   social: "Social",
-  notifications: "Notifications",
   documents: "PDFs & Documents",
 };
 
-export type ConnectorStatus = "implemented" | "planned";
+export type ConnectorStatus = "implemented";
 
 export interface Connector {
   id: string;
