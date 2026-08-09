@@ -45,35 +45,27 @@ It does **not** hunt peers or competitors in your niche (e.g. other coaches when
 | Geocoding fallback chain — Google → free OpenStreetMap (no key needed) | Done |
 | LinkedIn / Facebook as search sources | UI only (“coming soon”) |
 | LinkedIn / Facebook message **drafting** | Done (no auto-send / no scraping) |
-| In-app auto-updater (Settings → Updates) | Done — needs a tagged GitHub Release to have anything to find |
+## Releasing a build
 
-## Releasing an update
-
-Users get updates via a signed **GitHub Release**, not by pulling `main` and rebuilding.
-
-```
-dev branch → merge to main → bump version → git tag vX.Y.Z → push tag
-                                                    ↓
-                                    GitHub Action builds + signs installer
-                                                    ↓
-                                    Draft GitHub Release (you review, then publish)
-                                                    ↓
-                                    App checks for update → downloads → installs → relaunches
-```
+No in-app auto-updater (disabled — see below). Ship new versions via a tagged GitHub Release
+and have users reinstall.
 
 1. Merge finished work into `main`.
 2. Bump the version in **all three** of `package.json`, `src-tauri/tauri.conf.json`, and
    `src-tauri/Cargo.toml` (they must match).
 3. Tag and push: `git tag v0.1.1 && git push origin v0.1.1`.
-4. `.github/workflows/release.yml` builds a signed Windows installer and opens a **draft**
-   release with the updater's `latest.json` manifest attached — nothing goes live until you
-   publish that draft from the GitHub UI.
-5. Once published, anyone on an older version sees it in **Settings → Updates**.
+4. `.github/workflows/release.yml` builds an installer and opens a **draft** release —
+   nothing goes live until you publish that draft from the GitHub UI.
 
-Requires two repo secrets (`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`)
-from the minisign keypair generated for this — set up once, not per release. The build is
-currently unsigned at the OS level (no Windows code-signing cert yet), so installs will show
-a SmartScreen "unknown publisher" warning until one's added.
+The build is currently unsigned at the OS level (no Windows code-signing cert yet), so
+installs will show a SmartScreen "unknown publisher" warning until one's added.
+
+**Auto-updates:** the `tauri-plugin-updater` integration was removed (2026-08) since it
+wasn't needed yet. Re-adding it later means: `npm install @tauri-apps/plugin-updater`,
+`tauri-plugin-updater` back in `src-tauri/Cargo.toml`, re-registering the plugin in
+`src-tauri/src/lib.rs`, restoring the `updater` block in `src-tauri/tauri.conf.json`
+(endpoint + a fresh minisign keypair), and `updater:default` in
+`src-tauri/capabilities/default.json`.
 
 ## Local Business Hunter
 

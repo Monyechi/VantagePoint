@@ -13,7 +13,6 @@ import {
   type SellerTone,
 } from "@/lib/settings/sellerProfile";
 import { getTheme, setTheme, type Theme } from "@/lib/settings/theme";
-import { checkForUpdate, downloadAndInstallUpdate, type UpdateInfo } from "@/lib/settings/updater";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,12 +47,6 @@ export function SettingsPage() {
   const [theme, setThemeState] = useState<Theme>("system");
 
   const [appVersion, setAppVersion] = useState("");
-  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [updateChecked, setUpdateChecked] = useState(false);
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
-  const [installingUpdate, setInstallingUpdate] = useState(false);
-  const [updateProgress, setUpdateProgress] = useState<number | null>(null);
-  const [updateError, setUpdateError] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -82,32 +75,6 @@ export function SettingsPage() {
   async function changeTheme(next: Theme) {
     setThemeState(next);
     await setTheme(next);
-  }
-
-  async function checkUpdate() {
-    setCheckingUpdate(true);
-    setUpdateError(null);
-    try {
-      setUpdateInfo(await checkForUpdate());
-      setUpdateChecked(true);
-    } catch (err) {
-      setUpdateError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setCheckingUpdate(false);
-    }
-  }
-
-  async function installUpdate() {
-    setInstallingUpdate(true);
-    setUpdateProgress(null);
-    setUpdateError(null);
-    try {
-      await downloadAndInstallUpdate(setUpdateProgress);
-      // The app relaunches itself on success — nothing more to do here.
-    } catch (err) {
-      setUpdateError(err instanceof Error ? err.message : String(err));
-      setInstallingUpdate(false);
-    }
   }
 
   function clearTestResult(provider: string) {
@@ -200,44 +167,11 @@ export function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Updates</CardTitle>
+          <CardTitle>About</CardTitle>
           <CardDescription>
             {appVersion ? `Version ${appVersion}` : "Version unknown — run the installed app, not npm run dev"}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
-          {!updateInfo && (
-            <Button variant="secondary" disabled={checkingUpdate} onClick={() => void checkUpdate()}>
-              {checkingUpdate ? "Checking…" : "Check for updates"}
-            </Button>
-          )}
-          {updateChecked && !updateInfo && !checkingUpdate && (
-            <p className="text-sm text-[var(--color-success)]">You're up to date.</p>
-          )}
-          {updateInfo && (
-            <div className="space-y-2">
-              <p className="text-sm">
-                Version <span className="font-semibold">{updateInfo.version}</span> is
-                available (you're on {updateInfo.currentVersion}).
-              </p>
-              {updateInfo.notes && (
-                <p className="whitespace-pre-wrap text-xs text-[var(--color-muted-foreground)]">
-                  {updateInfo.notes}
-                </p>
-              )}
-              <Button disabled={installingUpdate} onClick={() => void installUpdate()}>
-                {installingUpdate
-                  ? updateProgress !== null
-                    ? `Installing… ${updateProgress}%`
-                    : "Installing…"
-                  : "Download & Install"}
-              </Button>
-            </div>
-          )}
-          {updateError && (
-            <p className="text-xs text-[var(--color-destructive)]">{updateError}</p>
-          )}
-        </CardContent>
       </Card>
 
       {!profileWasComplete && (
