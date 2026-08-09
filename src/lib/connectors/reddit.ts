@@ -2,7 +2,7 @@ import { fetch } from "@tauri-apps/plugin-http";
 import { getApiKey } from "@/lib/db/queries";
 import type { WebSearchResult } from "./search";
 
-const REDDIT_USER_AGENT = "desktop:com.clientpilot.app:v0.1 (by /u/clientpilot_user)";
+const REDDIT_USER_AGENT = "desktop:com.clientpilot.app:v0.1 (by /u/vantagepoint_user)";
 
 function splitRedditCredentials(combined: string): { clientId: string; clientSecret: string } {
   const idx = combined.indexOf(":");

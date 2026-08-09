@@ -67,7 +67,7 @@ export async function geocodeNominatim(location: string): Promise<{ lat: number;
   const res = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
     method: "GET",
     headers: {
-      "User-Agent": "ClientPilot/0.1 (contact: local desktop app; +https://clientpilot.local)",
+      "User-Agent": "VantagePoint/0.1 (contact: local desktop app; +https://vantagepoint.local)",
     },
   });
   if (!res.ok) {

@@ -1,14 +1,14 @@
-# ClientPilot
+# VantagePoint
 
 **Find clients who need what you sell — with an AI Business Development Representative that works on your desktop.**
 
-ClientPilot is a local-first **AI Workforce OS**. The first employee is an **AI BDR**: it searches for potential buyers, researches their websites, scores them as leads, and helps you draft outreach. It is **not** a chat app. Chat (later) is an assistant; the product is dedicated pages for prospecting, CRM, outreach, tasks, and AI configuration.
+VantagePoint is a local-first **AI Workforce OS**. The first employee is an **AI BDR**: it searches for potential buyers, researches their websites, scores them as leads, and helps you draft outreach. It is **not** a chat app. Chat (later) is an assistant; the product is dedicated pages for prospecting, CRM, outreach, tasks, and AI configuration.
 
 ## What this app is for
 
-You sell something. ClientPilot helps you find **people and businesses who may want to buy it**.
+You sell something. VantagePoint helps you find **people and businesses who may want to buy it**.
 
-| You sell… | ClientPilot looks for… |
+| You sell… | VantagePoint looks for… |
 |-----------|------------------------|
 | Relationship coaching | People seeking coaching / relationship help |
 | Websites, mobile apps, desktop apps | Businesses that need software built |
@@ -80,11 +80,11 @@ a SmartScreen "unknown publisher" warning until one's added.
 A second lead-sourcing mode alongside Prospect Search, built around Google Maps Platform. Enter a city, a business type, and a radius; for each business found:
 
 - **No website?** It's flagged as a high-priority lead immediately — demand exists (reviews, rating) with nowhere online to send it.
-- **Has a website?** ClientPilot fetches the homepage plus best-effort About/Contact pages, runs Google PageSpeed (performance/accessibility/SEO), detects common DIY site builders (WordPress, Wix, Squarespace, Shopify, Weebly, Webflow, GoDaddy Website Builder) with a free built-in signature detector, and has the AI combine all of it into one opportunity score with concrete reasons and a best-effort decision-maker name/email.
+- **Has a website?** VantagePoint fetches the homepage plus best-effort About/Contact pages, runs Google PageSpeed (performance/accessibility/SEO), detects common DIY site builders (WordPress, Wix, Squarespace, Shopify, Weebly, Webflow, GoDaddy Website Builder) with a free built-in signature detector, and has the AI combine all of it into one opportunity score with concrete reasons and a best-effort decision-maker name/email.
 
 Results land in the same Leads/Outreach/Tasks pipeline as Prospect Search, with a results dashboard (counts by opportunity flag, an optional estimated-revenue figure from your own average project value).
 
-**Google Maps Platform data handling:** Google's terms restrict how Places data can be stored/cached long-term. ClientPilot only persists the Place ID plus its own analysis (score, notes, outreach) — not the full Places payload (no coordinates, opening hours, or place-type taxonomy). The business-card fields it does keep (name, phone, website, rating, review count) refresh on demand via a **Refresh from Google** button on the lead, rather than being treated as a permanent copy.
+**Google Maps Platform data handling:** Google's terms restrict how Places data can be stored/cached long-term. VantagePoint only persists the Place ID plus its own analysis (score, notes, outreach) — not the full Places payload (no coordinates, opening hours, or place-type taxonomy). The business-card fields it does keep (name, phone, website, rating, review count) refresh on demand via a **Refresh from Google** button on the lead, rather than being treated as a permanent copy.
 
 ## Connectors
 
@@ -124,7 +124,7 @@ Evaluated and deliberately excluded as not fitting the core BDR loop — removed
 
 | Connector | Why cut |
 |-----------|---------|
-| Stripe, Paddle, Lemon Squeezy | Billing infrastructure for monetizing ClientPilot itself, not a BYOK tool for the BDR workflow |
+| Stripe, Paddle, Lemon Squeezy | Billing infrastructure for monetizing VantagePoint itself, not a BYOK tool for the BDR workflow |
 | Clearbit | Standalone API sunset after the 2023 HubSpot acquisition — no longer viable as BYOK |
 | MCP, n8n | Dev/workflow infrastructure, not something a user configures on a Connectors page |
 | Google / Microsoft Contacts | Personal address-book sync — redundant with the built-in Leads CRM |
@@ -147,7 +147,7 @@ npm install
 npm run tauri:dev
 ```
 
-Or double-click **`Start ClientPilot.bat`**.
+Or double-click **`Start VantagePoint.bat`**.
 
 ### First-time setup in the app
 

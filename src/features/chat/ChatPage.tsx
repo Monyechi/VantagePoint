@@ -57,7 +57,7 @@ interface PendingConfirm {
   match: LedgerMatch;
 }
 
-const SIDEBAR_COLLAPSED_KEY = "clientpilot.chat.sidebarCollapsed";
+const SIDEBAR_COLLAPSED_KEY = "vantagepoint.chat.sidebarCollapsed";
 
 function readSidebarCollapsed(): boolean {
   try {

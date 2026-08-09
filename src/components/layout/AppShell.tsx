@@ -31,10 +31,10 @@ export function AppShell() {
       <aside className="flex w-56 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-sidebar)]/95">
         <div className="border-b border-[var(--color-border)] px-4 py-5">
           <div className="font-[var(--font-display)] text-lg font-semibold tracking-tight text-[var(--color-foreground)]">
-            ClientPilot
+            VantagePoint
           </div>
           <div className="mt-0.5 text-xs text-[var(--color-muted-foreground)]">
-            Find clients · AI BDR
+            Local market intelligence
           </div>
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 p-2">

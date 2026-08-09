@@ -1,8 +1,8 @@
-﻿$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Stop"
 $Root = Split-Path (Split-Path $MyInvocation.MyCommand.Path -Parent) -Parent
 Set-Location $Root
 
-$existing = Get-Process -Name "clientpilot" -ErrorAction SilentlyContinue
+$existing = Get-Process -Name "vantagepoint" -ErrorAction SilentlyContinue
 if ($existing) {
   Add-Type @"
 using System;

@@ -2,8 +2,8 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-title ClientPilot Dev
-echo Starting ClientPilot (tauri:dev)...
+title VantagePoint Dev
+echo Starting VantagePoint (tauri:dev)...
 echo.
 
 where node >nul 2>&1
@@ -38,5 +38,5 @@ set "CARGO_TARGET_DIR=%cd%\src-tauri\target"
 
 call npm run tauri:dev
 echo.
-echo ClientPilot exited with code %ERRORLEVEL%.
+echo VantagePoint exited with code %ERRORLEVEL%.
 pause

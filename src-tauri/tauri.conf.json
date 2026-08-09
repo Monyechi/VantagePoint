@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ClientPilot",
+  "productName": "VantagePoint",
   "version": "0.1.0",
   "identifier": "com.clientpilot.app",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "ClientPilot",
+        "title": "VantagePoint",
         "width": 1280,
         "height": 800,
         "minWidth": 960,

@@ -243,7 +243,7 @@ export function SettingsPage() {
       {!profileWasComplete && (
         <Card className="border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5">
           <CardContent className="py-4 text-sm">
-            <span className="font-medium">Welcome to ClientPilot.</span> Fill in your Seller
+            <span className="font-medium">Welcome to VantagePoint.</span> Fill in your Seller
             Profile below so outreach and lead scoring know who you are — otherwise your drafts
             will read like they came from nobody in particular.
           </CardContent>

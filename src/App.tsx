@@ -69,7 +69,7 @@ export default function App() {
   if (!ready) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-[var(--color-muted-foreground)]">
-        Starting ClientPilot…
+        Starting VantagePoint…
       </div>
     );
   }

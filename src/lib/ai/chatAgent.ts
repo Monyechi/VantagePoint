@@ -95,7 +95,7 @@ function buildSystemPrompt(profile: SellerProfile, defaults: ChatDefaults): stri
     .filter(Boolean)
     .join("\n");
 
-  return `You are ClientPilot's lead-search assistant. Every turn, output ONE JSON object matching the contract below — no prose outside the JSON, no markdown code fences.
+  return `You are VantagePoint's lead-search assistant. Every turn, output ONE JSON object matching the contract below — no prose outside the JSON, no markdown code fences.
 
 ## Who you're working for
 ${sellerProfileBrief(profile)}

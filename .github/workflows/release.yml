@@ -42,7 +42,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "ClientPilot ${{ github.ref_name }}"
+          releaseName: "VantagePoint ${{ github.ref_name }}"
           releaseBody: "See assets below to download this version."
           releaseDraft: true
           prerelease: false

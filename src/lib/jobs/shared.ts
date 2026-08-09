@@ -132,7 +132,7 @@ async function fetchRaw(url: string): Promise<string> {
       method: "GET",
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (compatible; ClientPilot/0.1; +https://clientpilot.local)",
+          "Mozilla/5.0 (compatible; VantagePoint/0.1; +https://vantagepoint.local)",
         Accept: "text/html,application/xhtml+xml",
       },
       signal: controller.signal,
